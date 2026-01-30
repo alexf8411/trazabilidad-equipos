@@ -1,0 +1,115 @@
+/* --- VARIABLES GLOBALES (Tema Institucional) --- */
+:root {
+    --primary-color: #003366; /* Azul Oscuro Institucional */
+    --accent-color: #0055A5;  /* Azul más claro para botones */
+    --bg-color: #f4f6f9;      /* Gris muy claro para el fondo */
+    --text-color: #333333;
+    --card-bg: #ffffff;
+    --shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+/* --- RESET BÁSICO --- */
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: 'Inter', sans-serif;
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    height: 100vh; /* Ocupa toda la altura de la pantalla */
+    display: flex;
+    justify-content: center; /* Centrado horizontal */
+    align-items: center;     /* Centrado vertical */
+}
+
+/* --- TARJETA DE LOGIN --- */
+.login-card {
+    background-color: var(--card-bg);
+    padding: 2.5rem;
+    width: 100%;
+    max-width: 400px; /* No se estira demasiado en PC */
+    border-radius: 8px;
+    box-shadow: var(--shadow);
+    border-top: 5px solid var(--primary-color); /* Detalle estético superior */
+}
+
+.login-header {
+    text-align: center;
+    margin-bottom: 2rem;
+}
+
+.login-header h2 {
+    color: var(--primary-color);
+    font-weight: 600;
+}
+
+.login-header p {
+    color: #666;
+    font-size: 0.9rem;
+    margin-top: 0.5rem;
+}
+
+/* --- FORMULARIO --- */
+.form-group {
+    margin-bottom: 1.5rem;
+}
+
+label {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #444;
+}
+
+input {
+    width: 100%;
+    padding: 0.75rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 1rem;
+    transition: border-color 0.3s;
+}
+
+/* Accesibilidad: Resaltar donde se escribe */
+input:focus {
+    outline: none;
+    border-color: var(--accent-color);
+    box-shadow: 0 0 0 3px rgba(0, 85, 165, 0.1);
+}
+
+/* --- BOTÓN --- */
+.btn-primary {
+    width: 100%;
+    padding: 0.85rem;
+    background-color: var(--primary-color);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.3s;
+}
+
+.btn-primary:hover {
+    background-color: var(--accent-color);
+}
+
+/* --- FOOTER --- */
+.login-footer {
+    text-align: center;
+    margin-top: 1.5rem;
+    color: #888;
+}
+
+/* --- MÓVIL (RESPONSIVE) --- */
+@media (max-width: 480px) {
+    .login-card {
+        padding: 1.5rem;
+        width: 90%; /* Deja margen en celulares */
+    }
+}
