@@ -1,6 +1,11 @@
 <?php
 require_once '../core/session.php';
 
+// --- PROTECCIÓN DE CACHÉ (Evita el botón atrás) ---
+header("Cache-Control: no-cache, no-store, must-revalidate"); // HTTP 1.1.
+header("Pragma: no-cache"); // HTTP 1.0.
+header("Expires: 0"); // Proxies.
+
 // --- PROTECCIÓN DE RUTA ---
 // Si el usuario no tiene la marca de "logged_in", lo expulsamos al login
 if (!isset($_SESSION['logged_in']) || $_SESSION['logged_in'] !== true) {
@@ -13,6 +18,26 @@ if (!isset($_SESSION['logged_in']) || $_SESSION['logged_in'] !== true) {
 <head>
     <meta charset="UTF-8">
     <title>Panel Principal</title>
+   <script>
+        // Función que pregunta al servidor el estado real
+        function verificarSesion() {
+            fetch('status.php')
+                .then(response => response.json())
+                .then(data => {
+                    // Si el servidor dice que NO estamos activos, recargamos
+                    // para que PHP nos expulse al Login.
+                    if (data.status !== 'active') {
+                        window.location.href = 'login.php';
+                    }
+                })
+                .catch(error => console.error('Error verificando sesión:', error));
+        }
+
+        // Se ejecuta cuando la página se muestra (incluso desde el botón Atrás/Caché)
+        window.addEventListener('pageshow', function(event) {
+            verificarSesion();
+        });
+    </script>
     <link rel="stylesheet" href="../css/style.css"> <style>
         .dashboard-container { padding: 2rem; max-width: 800px; margin: 0 auto; }
         .welcome-card { background: white; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
@@ -34,7 +59,7 @@ if (!isset($_SESSION['logged_in']) || $_SESSION['logged_in'] !== true) {
                 <tr><th>Roles (LDAP):</th><td><code><?php echo $_SESSION['roles']; ?></code></td></tr>
             </table>
 
-            <a href="logout.php" class="logout-btn">Cerrar Sesión</a>
+            <a href="logout.php" class="logout-btn">Cerrar Sesión Segura</a>
         </div>
     </div>
 </body>
