@@ -8,7 +8,7 @@
 $host = 'localhost';
 $db   = 'trazabilidad_local';
 $user = 'appadmdb';
-$pass = 'AQUI_TU_CONTRASEÑA_REAL'; // La contraseña de appadmdb
+$pass = 'DBAPPFEo5POJeGW!'; // La contraseña de appadmdb
 $charset = 'utf8mb4';
 
 $dsn = "mysql:host=$host;dbname=$db;charset=$charset";
