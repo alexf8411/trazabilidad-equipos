@@ -25,6 +25,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_SESSION['roles']      = $resultado['data']['roles'];
             $_SESSION['logged_in']  = true;
 
+            // --- INICIO AUDITORÍA (Actividad 9) ---
+            try {
+                // 1. Incluimos la conexión
+                require_once '../core/db.php';
+                
+                // 2. Preparamos la inserción en la NUEVA tabla
+                $sqlAudit = "INSERT INTO auditoria_acceso (fecha, hora, usuario_ldap, ip_acceso) 
+                             VALUES (CURDATE(), CURTIME(), ?, ?)";
+                
+                $stmtAudit = $pdo->prepare($sqlAudit);
+                
+                // 3. Ejecutamos con los datos reales
+                $stmtAudit->execute([
+                    $user,                   // usuario_ldap (ej. guillermo.fonseca)
+                    $_SERVER['REMOTE_ADDR']  // ip_acceso
+                ]);
+                
+            } catch (Exception $e) {
+                // Si falla el log, guardamos el error en el log de errores de Apache/PHP
+                // pero NO detenemos el acceso al usuario.
+                error_log("Fallo al registrar auditoría de acceso: " . $e->getMessage());
+            }
+            // --- FIN AUDITORÍA ---
+
             // 4. Redirección al Dashboard
             header("Location: dashboard.php");
             exit;
