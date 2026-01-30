@@ -18,26 +18,7 @@ if (!isset($_SESSION['logged_in']) || $_SESSION['logged_in'] !== true) {
 <head>
     <meta charset="UTF-8">
     <title>Panel Principal</title>
-   <script>
-        // Función que pregunta al servidor el estado real
-        function verificarSesion() {
-            fetch('status.php')
-                .then(response => response.json())
-                .then(data => {
-                    // Si el servidor dice que NO estamos activos, recargamos
-                    // para que PHP nos expulse al Login.
-                    if (data.status !== 'active') {
-                        window.location.href = 'login.php';
-                    }
-                })
-                .catch(error => console.error('Error verificando sesión:', error));
-        }
-
-        // Se ejecuta cuando la página se muestra (incluso desde el botón Atrás/Caché)
-        window.addEventListener('pageshow', function(event) {
-            verificarSesion();
-        });
-    </script>
+    <script src="js/session-check.js"></script>
     <link rel="stylesheet" href="../css/style.css"> <style>
         .dashboard-container { padding: 2rem; max-width: 800px; margin: 0 auto; }
         .welcome-card { background: white; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
