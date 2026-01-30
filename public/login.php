@@ -38,8 +38,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 
                 // 3. Ejecutamos con los datos reales
                 $stmtAudit->execute([
-                    $user,                   // usuario_ldap (ej. guillermo.fonseca)
+                    //$user,                   // usuario_ldap (ej. guillermo.fonseca)
+                    $_SESSION['usuario_id'],
                     $_SERVER['REMOTE_ADDR']  // ip_acceso
+
                 ]);
                 
             } catch (Exception $e) {
