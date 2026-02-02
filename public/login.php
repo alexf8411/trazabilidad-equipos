@@ -17,11 +17,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if ($resultado['success']) {
 
-            // --- TRAMPA DE DEBUG (Borrar después) ---
-            echo "<h2>Diagnóstico:</h2>";
-            echo "Lo que escribiste en Login: '<strong>" . $user . "</strong>'<br>";
-            echo "Lo que hay en la Base de Datos: 'guillermo.fonseca'<br>";
-            echo "Longitud detectada: " . strlen($user) . " caracteres.<br>";
+            // --- INICIO RADIOGRAFÍA ---
+            require_once '../core/db.php';
+            
+            echo "<h2>🕵️ Reporte de Inteligencia PHP</h2>";
+            
+            // 1. Verifiquemos si PHP logra ver CUALQUIER dato en la tabla
+            try {
+                $check = $pdo->query("SELECT * FROM usuarios_sistema");
+                $datos = $check->fetchAll(PDO::FETCH_ASSOC);
+                
+                if (count($datos) == 0) {
+                    echo "<h3 style='color:red'>🚨 ALERTA: PHP ve la tabla VACÍA.</h3>";
+                    echo "Posible causa: El usuario 'appadmdb' no tiene permisos para leer esta tabla nueva.<br>";
+                } else {
+                    echo "<h3>✅ PHP ve " . count($datos) . " usuarios en la tabla:</h3>";
+                    echo "<pre style='background:#eee; padding:10px;'>";
+                    print_r($datos);
+                    echo "</pre>";
+                    
+                    // 2. Comparación manual byte a byte
+                    echo "<h3>Comparación Forense:</h3>";
+                    foreach($datos as $fila) {
+                        echo "DB: [" . $fila['correo_ldap'] . "] vs Login: [" . $user . "] -> ";
+                        if ($fila['correo_ldap'] === $user) {
+                            echo "<strong style='color:green'>¡SON IDÉNTICOS! (El problema es el campo 'estado' o el rol)</strong><br>";
+                        } else {
+                            echo "<span style='color:red'>Diferentes</span><br>";
+                        }
+                    }
+                }
+            } catch (Exception $e) {
+                echo "Error CRÍTICO de BD: " . $e->getMessage();
+            }
+            die(); // Detenemos todo para leer el reporte
+            // --- FIN RADIOGRAFÍA ---
         
             // --- PASO 1: VERIFICACIÓN DE LISTA BLANCA (RBAC) ---
             require_once '../core/db.php'; // Conectamos a BD inmediatamente
