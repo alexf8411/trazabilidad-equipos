@@ -56,6 +56,15 @@ if (!isset($_SESSION['logged_in']) || $_SESSION['logged_in'] !== true) {
 
         /* Estilo especial para Admin */
         .card-admin { border-top: 4px solid #ffc107; }
+
+        .subtitle { color: #666; margin-top: 5px; font-size: 0.95em; }
+    
+        .badge-rol { padding: 4px 10px; border-radius: 15px; color: white; font-weight: bold; font-size: 0.8em; text-transform: uppercase; letter-spacing: 0.5px;}
+        
+        /* Colores según el rol */
+        .badge-rol.Administrador { background-color: #6f42c1; /* Morado Admin */ }
+        .badge-rol.Soporte { background-color: #17a2b8; /* Azul Técnico */ }
+        .badge-rol.Auditor { background-color: #6c757d; /* Gris Observador */ }
     </style>
 
     <script src="js/session-check.js"></script>
@@ -64,20 +73,21 @@ if (!isset($_SESSION['logged_in']) || $_SESSION['logged_in'] !== true) {
 
 <div class="container">
     <div class="welcome-card">
-        <div class="user-info">
-            <h2>
-                Hola, <?php echo htmlspecialchars($_SESSION['nombre']); ?>
-                <span class="badge"><?php echo htmlspecialchars($_SESSION['rol']); ?></span>
-            </h2>
-            <p>
-                <?php echo htmlspecialchars($_SESSION['depto'] ?? 'Departamento no especificado'); ?> | 
-                Usuario: <?php echo htmlspecialchars($_SESSION['usuario_id']); ?>
-            </p>
-        </div>
-        <div>
-            <a href="logout.php" class="btn-logout">Cerrar Sesión</a>
-        </div>
+    <div class="user-info">
+        <h2>
+            Hola, <?php echo htmlspecialchars($_SESSION['nombre']); ?>
+        </h2>
+        <p class="subtitle">
+            Rol actual: <span class="badge-rol <?php echo $_SESSION['rol']; ?>">
+                <?php echo htmlspecialchars($_SESSION['rol']); ?>
+            </span>
+            | Depto: <?php echo htmlspecialchars($_SESSION['depto'] ?? 'General'); ?>
+        </p>
     </div>
+    <div>
+        <a href="logout.php" class="btn-logout">Cerrar Sesión</a>
+    </div>
+</div>
 
     <div class="actions-grid">
         

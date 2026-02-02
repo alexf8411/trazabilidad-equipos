@@ -1,54 +1,62 @@
 <?php
 /**
  * public/admin_usuarios.php
- * Gestión de usuarios autorizados (CRUD Simple)
+ * Gestión de usuarios con protección de auto-eliminación
  */
 require_once '../core/session.php';
 require_once '../core/db.php';
 
-// 1. SEGURIDAD: Solo Administradores pueden ver esto
+// 1. SEGURIDAD: Solo Administradores
 if (!isset($_SESSION['rol']) || $_SESSION['rol'] !== 'Administrador') {
-    // Si es Soporte o Auditor, lo devolvemos al Dashboard
     header("Location: dashboard.php?error=acceso_no_autorizado");
     exit;
 }
 
 $mensaje = "";
 
-// 2. LÓGICA: Agregar o Eliminar Usuario
+// 2. LÓGICA DE PROCESAMIENTO
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // A. Agregar Usuario
+    
+    // A. CREAR USUARIO
     if (isset($_POST['accion']) && $_POST['accion'] === 'crear') {
         $correo = strtolower(trim($_POST['correo']));
-        $nombre = trim($_POST['nombre']);
+        $nombre = trim($_POST['nombre']); // Nombre descriptivo inicial
         $rol    = $_POST['rol'];
 
         try {
-            $sql = "INSERT INTO usuarios_sistema (correo_ldap, nombre_completo, rol) VALUES (?, ?, ?)";
+            $sql = "INSERT INTO usuarios_sistema (correo_ldap, nombre_completo, rol, estado) VALUES (?, ?, ?, 'Activo')";
             $stmt = $pdo->prepare($sql);
             $stmt->execute([$correo, $nombre, $rol]);
-            $mensaje = "✅ Usuario agregado correctamente.";
+            $mensaje = "<div class='alert success'>✅ Usuario <strong>$correo</strong> autorizado.</div>";
         } catch (PDOException $e) {
-            $mensaje = "❌ Error: El usuario ya existe o hubo un fallo técnico.";
+            if ($e->getCode() == '23000') {
+                $mensaje = "<div class='alert error'>⚠️ El usuario ya existe.</div>";
+            } else {
+                $mensaje = "<div class='alert error'>❌ Error técnico: " . $e->getMessage() . "</div>";
+            }
         }
     }
     
-    // B. Eliminar (Inactivar) Usuario
+    // B. ELIMINAR USUARIO (CON PROTECCIÓN)
     if (isset($_POST['accion']) && $_POST['accion'] === 'eliminar') {
-        $id = $_POST['id_eliminar'];
-        // Evitar auto-eliminación
-        if ($_SESSION['usuario_id'] !== $_POST['correo_eliminar']) {
+        $id_a_borrar = $_POST['id_eliminar'];
+        $correo_target = $_POST['correo_eliminar'];
+
+        // --- 🛡️ PROTECCIÓN CRÍTICA ---
+        // Verificamos si el usuario que intentan borrar es el mismo que está logueado
+        if ($correo_target === $_SESSION['usuario_id']) {
+            $mensaje = "<div class='alert error'>⛔ <strong>ACCIÓN DENEGADA:</strong> No puedes eliminar tu propio usuario administrador.</div>";
+        } else {
+            // Si no eres tú, procedemos
             $sql = "DELETE FROM usuarios_sistema WHERE id_usuario = ?";
             $stmt = $pdo->prepare($sql);
-            $stmt->execute([$id]);
-            $mensaje = "🗑️ Usuario eliminado.";
-        } else {
-            $mensaje = "⚠️ No puedes eliminarte a ti mismo.";
+            $stmt->execute([$id_a_borrar]);
+            $mensaje = "<div class='alert success'>🗑️ Acceso revocado para <strong>$correo_target</strong>.</div>";
         }
     }
 }
 
-// 3. CONSULTA: Traer lista de usuarios
+// 3. CONSULTA DE LISTADO
 $usuarios = $pdo->query("SELECT * FROM usuarios_sistema ORDER BY fecha_registro DESC")->fetchAll();
 ?>
 
@@ -56,69 +64,61 @@ $usuarios = $pdo->query("SELECT * FROM usuarios_sistema ORDER BY fecha_registro 
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Administración de Usuarios</title>
+    <title>Gestión de Usuarios</title>
     <style>
         body { font-family: sans-serif; padding: 20px; background-color: #f4f6f9; }
-        .container { max-width: 900px; margin: 0 auto; background: white; padding: 25px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-        h2 { border-bottom: 2px solid #007bff; padding-bottom: 10px; margin-top: 0; }
-        .form-group { margin-bottom: 15px; }
-        label { display: block; margin-bottom: 5px; font-weight: bold; }
-        input, select { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
-        button { background-color: #28a745; color: white; padding: 10px 15px; border: none; border-radius: 4px; cursor: pointer; }
-        button:hover { background-color: #218838; }
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-        th, td { padding: 12px; border-bottom: 1px solid #ddd; text-align: left; }
-        th { background-color: #f8f9fa; }
-        .btn-danger { background-color: #dc3545; padding: 5px 10px; font-size: 0.8rem; }
-        .alert { padding: 10px; margin-bottom: 15px; border-radius: 4px; background-color: #d1ecf1; color: #0c5460; }
-        .header-nav { display: flex; justify-content: space-between; margin-bottom: 20px; }
-        .back-link { text-decoration: none; color: #6c757d; font-weight: bold; }
+        .container { max-width: 1000px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        
+        /* Alertas */
+        .alert { padding: 10px; margin-bottom: 20px; border-radius: 4px; border: 1px solid transparent; }
+        .alert.success { background-color: #d4edda; color: #155724; border-color: #c3e6cb; }
+        .alert.error { background-color: #f8d7da; color: #721c24; border-color: #f5c6cb; }
+
+        /* Formulario y Tablas */
+        .card { background: #f8f9fa; padding: 15px; border-radius: 5px; margin-bottom: 20px; border: 1px solid #ddd; }
+        input, select { padding: 8px; border: 1px solid #ccc; border-radius: 4px; margin-right: 5px; }
+        button { cursor: pointer; padding: 8px 12px; border: none; border-radius: 4px; color: white; font-weight: bold; }
+        .btn-add { background-color: #28a745; }
+        .btn-del { background-color: #dc3545; }
+        
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { padding: 12px; border-bottom: 1px solid #eee; text-align: left; }
+        th { background-color: #007bff; color: white; }
     </style>
     <script src="js/session-check.js"></script>
 </head>
 <body>
 
 <div class="container">
-    <div class="header-nav">
-        <h2>👥 Gestión de Usuarios Autorizados</h2>
-        <a href="dashboard.php" class="back-link">⬅ Volver al Dashboard</a>
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+        <h2>👥 Usuarios Autorizados</h2>
+        <a href="dashboard.php" style="text-decoration:none; color:#666;">⬅ Volver</a>
     </div>
 
-    <?php if ($mensaje): ?>
-        <div class="alert"><?php echo $mensaje; ?></div>
-    <?php endif; ?>
+    <?php echo $mensaje; ?>
 
-    <div style="background: #f8f9fa; padding: 15px; border-radius: 5px; margin-bottom: 20px;">
-        <h3>Nuevo Usuario</h3>
-        <form method="POST">
+    <div class="card">
+        <h3>Nueva Autorización</h3>
+        <form method="POST" style="display:flex; gap:10px;">
             <input type="hidden" name="accion" value="crear">
-            <div style="display: flex; gap: 10px;">
-                <div style="flex: 1;">
-                    <input type="text" name="correo" placeholder="Usuario LDAP (ej: juan.perez)" required>
-                </div>
-                <div style="flex: 1;">
-                    <input type="text" name="nombre" placeholder="Nombre Completo" required>
-                </div>
-                <div style="width: 150px;">
-                    <select name="rol">
-                        <option value="Soporte">Soporte</option>
-                        <option value="Administrador">Administrador</option>
-                        <option value="Auditor">Auditor (Solo ver)</option>
-                    </select>
-                </div>
-                <button type="submit">Agregar</button>
-            </div>
+            <input type="text" name="correo" placeholder="Usuario LDAP (ej. j.perez)" required style="flex:1;">
+            <input type="text" name="nombre" placeholder="Nombre descriptivo" required style="flex:1;">
+            <select name="rol">
+                <option value="Soporte">Soporte</option>
+                <option value="Administrador">Administrador</option>
+                <option value="Auditor">Auditor</option>
+            </select>
+            <button type="submit" class="btn-add">Autorizar</button>
         </form>
     </div>
 
     <table>
         <thead>
             <tr>
-                <th>Usuario LDAP</th>
+                <th>Usuario</th>
                 <th>Nombre</th>
                 <th>Rol</th>
-                <th>Estado</th>
-                <th>Acción</th>
+                <th>Acciones</th>
             </tr>
         </thead>
         <tbody>
@@ -126,19 +126,22 @@ $usuarios = $pdo->query("SELECT * FROM usuarios_sistema ORDER BY fecha_registro 
             <tr>
                 <td><?php echo htmlspecialchars($usr['correo_ldap']); ?></td>
                 <td><?php echo htmlspecialchars($usr['nombre_completo']); ?></td>
+                <td><?php echo htmlspecialchars($usr['rol']); ?></td>
                 <td>
-                    <span style="font-weight: bold; color: <?php echo $usr['rol'] == 'Administrador' ? '#007bff' : '#666'; ?>">
-                        <?php echo htmlspecialchars($usr['rol']); ?>
-                    </span>
-                </td>
-                <td><?php echo htmlspecialchars($usr['estado']); ?></td>
-                <td>
-                    <form method="POST" onsubmit="return confirm('¿Seguro que deseas eliminar este acceso?');">
-                        <input type="hidden" name="accion" value="eliminar">
-                        <input type="hidden" name="id_eliminar" value="<?php echo $usr['id_usuario']; ?>">
-                        <input type="hidden" name="correo_eliminar" value="<?php echo $usr['correo_ldap']; ?>">
-                        <button type="submit" class="btn-danger">Eliminar</button>
-                    </form>
+                    <?php 
+                    // --- CAPA VISUAL DE PROTECCIÓN ---
+                    // Si el usuario de la fila es IGUAL al usuario logueado...
+                    if ($usr['correo_ldap'] === $_SESSION['usuario_id']): 
+                    ?>
+                        <span style="color:#aaa; font-style:italic; font-size:0.9em;">(Sesión actual)</span>
+                    <?php else: ?>
+                        <form method="POST" onsubmit="return confirm('¿Revocar acceso a <?php echo $usr['nombre_completo']; ?>?');">
+                            <input type="hidden" name="accion" value="eliminar">
+                            <input type="hidden" name="id_eliminar" value="<?php echo $usr['id_usuario']; ?>">
+                            <input type="hidden" name="correo_eliminar" value="<?php echo $usr['correo_ldap']; ?>">
+                            <button type="submit" class="btn-del">Eliminar</button>
+                        </form>
+                    <?php endif; ?>
                 </td>
             </tr>
             <?php endforeach; ?>
