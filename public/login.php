@@ -16,46 +16,62 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $resultado = autenticar_usuario($user, $pass);
 
         if ($resultado['success']) {
-            // 3. ¡ÉXITO! Guardamos datos en sesión
-            regenerar_sesion_segura(); // Anti-hijacking (Actividad 7)
-            
-            $_SESSION['usuario_id'] = $user;
-            $_SESSION['nombre']     = $resultado['data']['nombre'];
-            $_SESSION['depto']      = $resultado['data']['departamento'];
-            $_SESSION['roles']      = $resultado['data']['roles'];
-            $_SESSION['logged_in']  = true;
+            // --- PASO 1: VERIFICACIÓN DE LISTA BLANCA (RBAC) ---
+            require_once '../core/db.php'; // Conectamos a BD inmediatamente
 
-            // --- INICIO AUDITORÍA (Actividad 9) ---
-            try {
-                // 1. Incluimos la conexión
-                require_once '../core/db.php';
-                
-                // 2. Preparamos la inserción en la NUEVA tabla
-                $sqlAudit = "INSERT INTO auditoria_acceso (fecha, hora, usuario_ldap, ip_acceso) 
-                             VALUES (CURDATE(), CURTIME(), ?, ?)";
-                
-                $stmtAudit = $pdo->prepare($sqlAudit);
-                
-                // 3. Ejecutamos con los datos reales
-                $stmtAudit->execute([
-                    //$user,                   // usuario_ldap (ej. guillermo.fonseca)
-                    $_SESSION['usuario_id'],
-                    $_SERVER['REMOTE_ADDR']  // ip_acceso
+            // Buscamos si el usuario LDAP está en nuestra tabla de permisos y está Activo
+            $sqlRol = "SELECT rol, nombre_completo FROM usuarios_sistema 
+                       WHERE correo_ldap = ? AND estado = 'Activo' LIMIT 1";
+            $stmtRol = $pdo->prepare($sqlRol);
+            $stmtRol->execute([$user]);
+            $usuarioLocal = $stmtRol->fetch();
 
-                ]);
+            if (!$usuarioLocal) {
+                // CASO A: Autenticó en LDAP pero NO está en la lista blanca
+                // No regeneramos sesión, no auditamos acceso exitoso, solo mostramos error.
+                $error_msg = "Acceso denegado: Su usuario no está autorizado en el sistema de inventario.";
                 
-            } catch (Exception $e) {
-                // Si falla el log, guardamos el error en el log de errores de Apache/PHP
-                // pero NO detenemos el acceso al usuario.
-                error_log("Fallo al registrar auditoría de acceso: " . $e->getMessage());
+            } else {
+                // CASO B: ¡AUTORIZADO TOTALMENTE! (LDAP + RBAC)
+                
+                // 1. Configuración de Sesión
+                regenerar_sesion_segura(); // Anti-hijacking
+                
+                $_SESSION['usuario_id'] = $user;
+                // Usamos el nombre de la DB local si queremos, o el del LDAP
+                $_SESSION['nombre']     = $usuarioLocal['nombre_completo']; 
+                $_SESSION['depto']      = $resultado['data']['departamento'];
+                // ¡IMPORTANTE! Sobrescribimos el rol con el que definimos en nuestra base de datos
+                $_SESSION['roles']      = $usuarioLocal['rol']; 
+                $_SESSION['logged_in']  = true;
+
+                // 2. --- TU AUDITORÍA ORIGINAL (INTEGRADA AQUÍ) ---
+                try {
+                    // Nota: Ya no hacemos require_once '../core/db.php' porque lo hicimos arriba
+                    
+                    $sqlAudit = "INSERT INTO auditoria_acceso (fecha, hora, usuario_ldap, ip_acceso) 
+                                 VALUES (CURDATE(), CURTIME(), ?, ?)";
+                    
+                    $stmtAudit = $pdo->prepare($sqlAudit);
+                    
+                    $stmtAudit->execute([
+                        $_SESSION['usuario_id'],
+                        $_SERVER['REMOTE_ADDR']
+                    ]);
+                    
+                } catch (Exception $e) {
+                    // Log de error silencioso
+                    error_log("Fallo al registrar auditoría de acceso: " . $e->getMessage());
+                }
+                // --- FIN AUDITORÍA ---
+
+                // 3. Redirección
+                header("Location: dashboard.php");
+                exit;
             }
-            // --- FIN AUDITORÍA ---
 
-            // 4. Redirección al Dashboard
-            header("Location: dashboard.php");
-            exit;
         } else {
-            // Fallo: Guardamos el mensaje para mostrarlo en el HTML
+            // Fallo LDAP (Contraseña incorrecta, usuario no existe, etc.)
             $error_msg = $resultado['message'];
         }
     } else {
