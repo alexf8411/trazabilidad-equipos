@@ -1,13 +1,11 @@
 <?php
-require_once '../core/session.php';
+/**
+ * public/dashboard.php
+ * Panel Principal
+ */
+require_once '../core/session.php'; // Inicia sesión y verifica inactividad
 
-// --- PROTECCIÓN DE CACHÉ (Evita el botón atrás) ---
-header("Cache-Control: no-cache, no-store, must-revalidate"); // HTTP 1.1.
-header("Pragma: no-cache"); // HTTP 1.0.
-header("Expires: 0"); // Proxies.
-
-// --- PROTECCIÓN DE RUTA ---
-// Si el usuario no tiene la marca de "logged_in", lo expulsamos al login
+// Verificación de seguridad (Doble factor)
 if (!isset($_SESSION['logged_in']) || $_SESSION['logged_in'] !== true) {
     header("Location: login.php");
     exit;
@@ -17,31 +15,91 @@ if (!isset($_SESSION['logged_in']) || $_SESSION['logged_in'] !== true) {
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Panel Principal</title>
-    <script src="js/session-check.js"></script>
-    <link rel="stylesheet" href="../css/style.css"> <style>
-        .dashboard-container { padding: 2rem; max-width: 800px; margin: 0 auto; }
-        .welcome-card { background: white; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-        .data-table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
-        .data-table th, .data-table td { text-align: left; padding: 10px; border-bottom: 1px solid #ddd; }
-        .logout-btn { background: #c62828; display: inline-block; margin-top: 20px; text-decoration: none; color: white; padding: 10px 20px; border-radius: 5px; }
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - Trazabilidad</title>
+    <style>
+        body { font-family: sans-serif; background-color: #f4f6f9; padding: 20px; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        
+        .welcome-card {
+            background: white; padding: 20px; border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1); display: flex;
+            justify-content: space-between; align-items: center;
+        }
+        
+        .user-info h2 { margin: 0 0 5px 0; color: #333; }
+        .user-info p { margin: 0; color: #666; }
+        .badge { 
+            background: #007bff; color: white; padding: 3px 8px; 
+            border-radius: 12px; font-size: 0.8em; vertical-align: middle;
+        }
+
+        .actions-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px; margin-top: 30px;
+        }
+        
+        .action-card {
+            background: white; padding: 20px; border-radius: 8px;
+            text-align: center; border: 1px solid #ddd; transition: transform 0.2s;
+            text-decoration: none; color: #333;
+        }
+        .action-card:hover { transform: translateY(-3px); box-shadow: 0 5px 15px rgba(0,0,0,0.1); }
+        .action-card h3 { color: #0056b3; }
+        
+        /* Botón de Logout */
+        .btn-logout {
+            background-color: #dc3545; color: white; text-decoration: none;
+            padding: 10px 20px; border-radius: 5px; font-weight: bold;
+        }
+        .btn-logout:hover { background-color: #c82333; }
+
+        /* Estilo especial para Admin */
+        .card-admin { border-top: 4px solid #ffc107; }
     </style>
+
+    <script src="js/session-check.js"></script>
 </head>
 <body>
-    <div class="dashboard-container">
-        <div class="welcome-card">
-            <h1>👋 Hola, <?php echo htmlspecialchars($_SESSION['nombre']); ?></h1>
-            <p>Has ingresado correctamente al Sistema de Trazabilidad.</p>
-            
-            <h3>Tus Credenciales de Sesión:</h3>
-            <table class="data-table">
-                <tr><th>Usuario:</th><td><?php echo $_SESSION['usuario_id']; ?></td></tr>
-                <tr><th>Departamento:</th><td><?php echo $_SESSION['depto']; ?></td></tr>
-                <tr><th>Roles (LDAP):</th><td><code><?php echo $_SESSION['roles']; ?></code></td></tr>
-            </table>
 
-            <a href="logout.php" class="logout-btn">Cerrar Sesión Segura</a>
+<div class="container">
+    <div class="welcome-card">
+        <div class="user-info">
+            <h2>
+                Hola, <?php echo htmlspecialchars($_SESSION['nombre']); ?>
+                <span class="badge"><?php echo htmlspecialchars($_SESSION['rol']); ?></span>
+            </h2>
+            <p>
+                <?php echo htmlspecialchars($_SESSION['depto'] ?? 'Departamento no especificado'); ?> | 
+                Usuario: <?php echo htmlspecialchars($_SESSION['usuario_id']); ?>
+            </p>
+        </div>
+        <div>
+            <a href="logout.php" class="btn-logout">Cerrar Sesión</a>
         </div>
     </div>
+
+    <div class="actions-grid">
+        
+        <a href="inventario.php" class="action-card">
+            <h3>📦 Inventario General</h3>
+            <p>Consultar listado maestro de equipos y ubicaciones.</p>
+        </a>
+
+        <?php if ($_SESSION['rol'] === 'Administrador'): ?>
+            <a href="admin_usuarios.php" class="action-card card-admin">
+                <h3>👥 Gestión de Usuarios</h3>
+                <p>Autorizar accesos y asignar roles (RBAC).</p>
+            </a>
+        <?php endif; ?>
+
+        <div class="action-card" style="opacity: 0.5; cursor: not-allowed;">
+            <h3>📊 Reportes (Próximamente)</h3>
+            <p>Estadísticas de uso y auditoría.</p>
+        </div>
+
+    </div>
+</div>
+
 </body>
 </html>
