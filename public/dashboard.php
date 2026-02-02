@@ -97,10 +97,17 @@ if (!isset($_SESSION['logged_in']) || $_SESSION['logged_in'] !== true) {
         </a>
 
         <?php if ($_SESSION['rol'] === 'Administrador'): ?>
+            
             <a href="admin_usuarios.php" class="action-card card-admin">
                 <h3>👥 Gestión de Usuarios</h3>
                 <p>Autorizar accesos y asignar roles (RBAC).</p>
             </a>
+
+            <a href="auditoria.php" class="action-card card-admin" style="border-top-color: #343a40;">
+                <h3>📜 Auditoría de Accesos</h3>
+                <p>Ver historial de conexiones e IPs.</p>
+            </a>
+
         <?php endif; ?>
 
         <div class="action-card" style="opacity: 0.5; cursor: not-allowed;">
