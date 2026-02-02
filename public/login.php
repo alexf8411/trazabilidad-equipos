@@ -24,8 +24,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             require_once '../core/db.php'; // Conectamos a BD inmediatamente
 
             // Buscamos si el usuario LDAP está en nuestra tabla de permisos y está Activo
-            $$stmtRol = $pdo->prepare($sqlRol);
-            $stmtRol->execute([$usuario_ldap_real]); // <--- AQUÍ USAMOS LA VARIABLE CORRECTA
+            
+            // 1. DEFINIMOS LA CONSULTA (¡Esto faltaba!)
+            $sqlRol = "SELECT id_usuario, rol, nombre_completo FROM usuarios_sistema 
+                       WHERE correo_ldap = ? AND estado = 'Activo' LIMIT 1";
+
+            // 2. PREPARAMOS (Con un solo $)
+            $stmtRol = $pdo->prepare($sqlRol);
+            
+            // 3. EJECUTAMOS
+            $stmtRol->execute([$usuario_ldap_real]); 
             $usuarioLocal = $stmtRol->fetch();
             
             if (!$usuarioLocal) {
