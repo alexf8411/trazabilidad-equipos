@@ -16,6 +16,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $resultado = autenticar_usuario($user, $pass);
 
         if ($resultado['success']) {
+
+            // --- TRAMPA DE DEBUG (Borrar después) ---
+            echo "<h2>Diagnóstico:</h2>";
+            echo "Lo que escribiste en Login: '<strong>" . $user . "</strong>'<br>";
+            echo "Lo que hay en la Base de Datos: 'guillermo.fonseca'<br>";
+            echo "Longitud detectada: " . strlen($user) . " caracteres.<br>";
+        
             // --- PASO 1: VERIFICACIÓN DE LISTA BLANCA (RBAC) ---
             require_once '../core/db.php'; // Conectamos a BD inmediatamente
 
