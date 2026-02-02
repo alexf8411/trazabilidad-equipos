@@ -17,56 +17,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if ($resultado['success']) {
 
-            // --- INICIO RADIOGRAFÍA ---
-            require_once '../core/db.php';
-            
-            echo "<h2>🕵️ Reporte de Inteligencia PHP</h2>";
-            
-            // 1. Verifiquemos si PHP logra ver CUALQUIER dato en la tabla
-            try {
-                $check = $pdo->query("SELECT * FROM usuarios_sistema");
-                $datos = $check->fetchAll(PDO::FETCH_ASSOC);
-                
-                if (count($datos) == 0) {
-                    echo "<h3 style='color:red'>🚨 ALERTA: PHP ve la tabla VACÍA.</h3>";
-                    echo "Posible causa: El usuario 'appadmdb' no tiene permisos para leer esta tabla nueva.<br>";
-                } else {
-                    echo "<h3>✅ PHP ve " . count($datos) . " usuarios en la tabla:</h3>";
-                    echo "<pre style='background:#eee; padding:10px;'>";
-                    print_r($datos);
-                    echo "</pre>";
-                    
-                    // 2. Comparación manual byte a byte
-                    echo "<h3>Comparación Forense:</h3>";
-                    foreach($datos as $fila) {
-                        echo "DB: [" . $fila['correo_ldap'] . "] vs Login: [" . $user . "] -> ";
-                        if ($fila['correo_ldap'] === $user) {
-                            echo "<strong style='color:green'>¡SON IDÉNTICOS! (El problema es el campo 'estado' o el rol)</strong><br>";
-                        } else {
-                            echo "<span style='color:red'>Diferentes</span><br>";
-                        }
-                    }
-                }
-            } catch (Exception $e) {
-                echo "Error CRÍTICO de BD: " . $e->getMessage();
-            }
-            die(); // Detenemos todo para leer el reporte
-            // --- FIN RADIOGRAFÍA ---
+           // 1. SALVAMOS EL USUARIO LDAP (Antes de que db.php lo sobrescriba)
+            $usuario_ldap_real = $user;
         
             // --- PASO 1: VERIFICACIÓN DE LISTA BLANCA (RBAC) ---
             require_once '../core/db.php'; // Conectamos a BD inmediatamente
 
             // Buscamos si el usuario LDAP está en nuestra tabla de permisos y está Activo
-            $sqlRol = "SELECT rol, nombre_completo FROM usuarios_sistema 
-                       WHERE correo_ldap = ? AND estado = 'Activo' LIMIT 1";
-            $stmtRol = $pdo->prepare($sqlRol);
-            $stmtRol->execute([$user]);
+            $$stmtRol = $pdo->prepare($sqlRol);
+            $stmtRol->execute([$usuario_ldap_real]); // <--- AQUÍ USAMOS LA VARIABLE CORRECTA
             $usuarioLocal = $stmtRol->fetch();
-
+            
             if (!$usuarioLocal) {
                 // CASO A: Autenticó en LDAP pero NO está en la lista blanca
                 // No regeneramos sesión, no auditamos acceso exitoso, solo mostramos error.
-                $error_msg = "Acceso denegado: Su usuario no está autorizado en el sistema de inventario.";
+                $error_msg = "Acceso denegado: El usuario '$usuario_ldap_real' no está autorizado.";
                 
             } else {
                 // CASO B: ¡AUTORIZADO TOTALMENTE! (LDAP + RBAC)
@@ -74,12 +39,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // 1. Configuración de Sesión
                 regenerar_sesion_segura(); // Anti-hijacking
                 
-                $_SESSION['usuario_id'] = $user;
-                // Usamos el nombre de la DB local si queremos, o el del LDAP
-                $_SESSION['nombre']     = $usuarioLocal['nombre_completo']; 
+                // 1. USUARIO: Usamos la variable blindada (corrección del bug appadmdb)
+                $_SESSION['usuario_id'] = $usuario_ldap_real; 
+                
+                // 2. NOMBRE: ¡CAMBIO REALIZADO! Usamos el dato directo del LDAP
+                // Esto garantiza que siempre veas el nombre oficial de la Universidad
+                $_SESSION['nombre']     = $resultado['data']['nombre']; 
+                
+                // 3. ROL: Este SÍ debe venir de la BD local
+                // (Es lo que define si ves el botón de "Gestionar Usuarios" o no)
+                $_SESSION['rol']        = $usuarioLocal['rol']; 
+                
+                // 4. DEPTO: También lo traemos del LDAP
                 $_SESSION['depto']      = $resultado['data']['departamento'];
-                // ¡IMPORTANTE! Sobrescribimos el rol con el que definimos en nuestra base de datos
-                $_SESSION['roles']      = $usuarioLocal['rol']; 
+                
                 $_SESSION['logged_in']  = true;
 
                 // 2. --- TU AUDITORÍA ORIGINAL (INTEGRADA AQUÍ) ---
