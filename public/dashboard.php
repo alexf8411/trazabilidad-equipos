@@ -1,87 +1,86 @@
 <?php
 /**
  * public/dashboard.php
- * Panel Principal
+ * Panel Principal con RBAC Estricto (Matriz de Accesos)
  */
-require_once '../core/session.php'; // Inicia sesión y verifica inactividad
+require_once '../core/session.php';
 
-// Verificación de seguridad (Doble factor)
+// Verificación de seguridad básica
 if (!isset($_SESSION['logged_in']) || $_SESSION['logged_in'] !== true) {
     header("Location: login.php");
     exit;
 }
+
+$rol = $_SESSION['rol']; // Atajo para escribir menos código
 ?>
 <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard - Trazabilidad</title>
+    <title>Dashboard - URTRACK</title>
     <style>
-        body { font-family: sans-serif; background-color: #f4f6f9; padding: 20px; }
+        /* Estilos Base */
+        body { font-family: 'Segoe UI', system-ui, sans-serif; background-color: #f4f6f9; padding: 20px; margin: 0; }
         .container { max-width: 1200px; margin: 0 auto; }
         
+        /* Tarjeta de Bienvenida */
         .welcome-card {
-            background: white; padding: 20px; border-radius: 8px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1); display: flex;
-            justify-content: space-between; align-items: center;
+            background: white; padding: 25px; border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05); display: flex;
+            justify-content: space-between; align-items: center; margin-bottom: 30px;
+            border-left: 5px solid #002D72;
         }
+        .user-info h2 { margin: 0 0 5px 0; color: #002D72; font-size: 1.5rem; }
+        .subtitle { color: #666; margin: 0; font-size: 0.95rem; }
         
-        .user-info h2 { margin: 0 0 5px 0; color: #333; }
-        .user-info p { margin: 0; color: #666; }
-        .badge { 
-            background: #007bff; color: white; padding: 3px 8px; 
-            border-radius: 12px; font-size: 0.8em; vertical-align: middle;
-        }
+        /* Badges de Rol */
+        .badge-rol { padding: 5px 12px; border-radius: 20px; color: white; font-weight: bold; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px; vertical-align: middle; }
+        .badge-rol.Administrador { background-color: #6f42c1; } /* Morado */
+        .badge-rol.Recursos { background-color: #28a745; }      /* Verde */
+        .badge-rol.Soporte { background-color: #17a2b8; }       /* Azul */
+        .badge-rol.Auditor { background-color: #6c757d; }       /* Gris */
 
+        /* Grid de Acciones */
         .actions-grid {
-            display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 20px; margin-top: 30px;
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 25px;
         }
         
+        /* Tarjetas de Acción */
         .action-card {
-            background: white; padding: 20px; border-radius: 8px;
-            text-align: center; border: 1px solid #ddd; transition: transform 0.2s;
-            text-decoration: none; color: #333;
+            background: white; padding: 25px; border-radius: 10px;
+            text-align: left; border: 1px solid #e1e4e8; transition: all 0.2s ease;
+            text-decoration: none; color: #333; display: flex; flex-direction: column;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+            position: relative; overflow: hidden;
         }
-        .action-card:hover { transform: translateY(-3px); box-shadow: 0 5px 15px rgba(0,0,0,0.1); }
-        .action-card h3 { color: #0056b3; }
+        .action-card:hover { transform: translateY(-3px); box-shadow: 0 8px 15px rgba(0,0,0,0.1); border-color: #002D72; }
+        .action-card h3 { color: #002D72; margin: 0 0 10px 0; font-size: 1.2rem; }
+        .action-card p { margin: 0; color: #666; font-size: 0.9rem; line-height: 1.4; }
         
-        /* Botón de Logout */
-        .btn-logout {
-            background-color: #dc3545; color: white; text-decoration: none;
-            padding: 10px 20px; border-radius: 5px; font-weight: bold;
-        }
+        /* Bordes superiores por tipo de acción */
+        .card-consult { border-top: 4px solid #17a2b8; } /* Inventario */
+        .card-input { border-top: 4px solid #28a745; }   /* Alta */
+        .card-move { border-top: 4px solid #007bff; }    /* Movimiento */
+        .card-report { border-top: 4px solid #fd7e14; }  /* Reportes */
+        .card-admin { border-top: 4px solid #ffc107; }   /* Admin */
+
+        .btn-logout { background-color: #dc3545; color: white; text-decoration: none; padding: 10px 20px; border-radius: 5px; font-weight: 600; font-size: 0.9rem; transition: background 0.2s; }
         .btn-logout:hover { background-color: #c82333; }
-
-        /* Estilo especial para Admin */
-        .card-admin { border-top: 4px solid #ffc107; }
-
-        .subtitle { color: #666; margin-top: 5px; font-size: 0.95em; }
-    
-        .badge-rol { padding: 4px 10px; border-radius: 15px; color: white; font-weight: bold; font-size: 0.8em; text-transform: uppercase; letter-spacing: 0.5px;}
-        
-        /* Colores según el rol */
-        .badge-rol.Administrador { background-color: #6f42c1; /* Morado Admin */ }
-        .badge-rol.Soporte { background-color: #17a2b8; /* Azul Técnico */ }
-        .badge-rol.Auditor { background-color: #6c757d; /* Gris Observador */ }
     </style>
-
     <script src="js/session-check.js"></script>
 </head>
 <body>
 
 <div class="container">
+    
     <div class="welcome-card">
         <div class="user-info">
-            <h2>
-                Hola, <?php echo htmlspecialchars($_SESSION['nombre']); ?>
-            </h2>
+            <h2>Hola, <?php echo htmlspecialchars($_SESSION['nombre']); ?></h2>
             <p class="subtitle">
-                Rol actual: <span class="badge-rol <?php echo $_SESSION['rol']; ?>">
-                    <?php echo htmlspecialchars($_SESSION['rol']); ?>
-                </span>
-                | Depto: <?php echo htmlspecialchars($_SESSION['depto'] ?? 'General'); ?>
+                Rol: <span class="badge-rol <?php echo $rol; ?>"><?php echo $rol; ?></span>
+                | <?php echo htmlspecialchars($_SESSION['correo']); ?>
             </p>
         </div>
         <div>
@@ -91,34 +90,50 @@ if (!isset($_SESSION['logged_in']) || $_SESSION['logged_in'] !== true) {
 
     <div class="actions-grid">
         
-        <a href="inventario.php" class="action-card">
+        <a href="inventario.php" class="action-card card-consult">
             <h3>📦 Inventario General</h3>
-            <p>Consultar listado maestro de equipos y ubicaciones.</p>
+            <p>Consulta maestra de equipos, ubicaciones y estados actuales.</p>
         </a>
 
-        <?php if ($_SESSION['rol'] === 'Administrador'): ?>
-            
+        <?php if (in_array($rol, ['Administrador', 'Recursos'])): ?>
+            <a href="alta_equipos.php" class="action-card card-input">
+                <h3>➕ Alta de Equipos</h3>
+                <p>Registro de nuevos activos (Hoja de Vida) e ingreso a Bodega.</p>
+            </a>
+        <?php endif; ?>
+
+        <?php if (in_array($rol, ['Administrador', 'Recursos', 'Soporte'])): ?>
+            <a href="registro_movimiento.php" class="action-card card-move">
+                <h3>🚚 Registro de Movimiento</h3>
+                <p>Asignaciones, devoluciones y traslados entre sedes.</p>
+            </a>
+        <?php endif; ?>
+
+        <?php if (in_array($rol, ['Administrador', 'Recursos', 'Auditor'])): ?>
+            <a href="reportes.php" class="action-card card-report">
+                <h3>📊 Informes y Reportes</h3>
+                <p>Descarga de Excel/PDF, actas y estadísticas de gestión.</p>
+            </a>
+        <?php endif; ?>
+
+        <?php if (in_array($rol, ['Administrador', 'Auditor'])): ?>
+            <a href="auditoria.php" class="action-card card-admin" style="border-top-color: #6c757d;">
+                <h3>📜 Auditoría de Accesos</h3>
+                <p>Logs de seguridad, conexiones IP e historial de logins.</p>
+            </a>
+        <?php endif; ?>
+
+        <?php if ($rol === 'Administrador'): ?>
             <a href="admin_usuarios.php" class="action-card card-admin">
                 <h3>👥 Gestión de Usuarios</h3>
-                <p>Autorizar accesos y asignar roles (RBAC).</p>
+                <p>Control de acceso RBAC y aprobación de cuentas.</p>
             </a>
 
             <a href="admin_lugares.php" class="action-card card-admin">
                 <h3>🏢 Sedes y Edificios</h3>
-                <p>Configurar ubicaciones, sedes y bodegas.</p>
+                <p>Administración del catálogo de ubicaciones.</p>
             </a>
-
-            <a href="auditoria.php" class="action-card card-admin" style="border-top-color: #343a40;">
-                <h3>📜 Auditoría de Accesos</h3>
-                <p>Ver historial de conexiones e IPs.</p>
-            </a>
-
         <?php endif; ?>
-
-        <div class="action-card" style="opacity: 0.5; cursor: not-allowed;">
-            <h3>📊 Reportes (Próximamente)</h3>
-            <p>Estadísticas de uso y auditoría.</p>
-        </div>
 
     </div>
 </div>

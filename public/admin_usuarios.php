@@ -103,10 +103,12 @@ $usuarios = $pdo->query("SELECT * FROM usuarios_sistema ORDER BY fecha_registro 
             <input type="hidden" name="accion" value="crear">
             <input type="text" name="correo" placeholder="Usuario LDAP (ej. j.perez)" required style="flex:1;">
             <input type="text" name="nombre" placeholder="Nombre descriptivo" required style="flex:1;">
-            <select name="rol">
-                <option value="Soporte">Soporte</option>
-                <option value="Administrador">Administrador</option>
-                <option value="Auditor">Auditor</option>
+            <select name="rol" required>
+                <option value="" disabled selected>-- Seleccionar Rol --</option>
+                <option value="Soporte">Soporte (Operativo)</option>
+                <option value="Administrador">Administrador (Total)</option>
+                <option value="Auditor">Auditor (Lectura)</option>
+                <option value="Recursos">Recursos (Dueño del Dato)</option>
             </select>
             <button type="submit" class="btn-add">Autorizar</button>
         </form>
