@@ -135,6 +135,13 @@ $rol = $_SESSION['rol']; // Atajo para escribir menos código
             </a>
         <?php endif; ?>
 
+        <?php if (in_array($rol, ['Administrador', 'Recursos', 'Soporte'])): ?>
+            <a href="registro_movimiento.php" class="action-card card-move">
+                <h3>🚚 Registro de Movimiento</h3>
+                <p>Asignaciones, devoluciones y traslados entre sedes.</p>
+            </a>
+        <?php endif; ?>
+
     </div>
 </div>
 
