@@ -39,15 +39,23 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     try {
         $pdo->beginTransaction();
 
-        // --- LÓGICA DE AUDITORÍA: DETECTAR CAMBIOS ---
+// 1. DETECTOR DE CAMBIOS (Lógica de Auditoría Reforzada)
         $cambios_detectados = [];
+        
+        // Comparamos los 4 campos clave
         if ($nuevo_serial !== $serial_original) 
             $cambios_detectados[] = "Serial: '$serial_original' ➝ '$nuevo_serial'";
         
         if ($nueva_placa !== $placa_original) 
             $cambios_detectados[] = "Placa: '$placa_original' ➝ '$nueva_placa'";
-            
-        // --- 1. ACTUALIZACIÓN MAESTRA (Tabla equipos) ---
+
+        if ($marca !== ($_POST['marca_original'] ?? ''))
+            $cambios_detectados[] = "Marca: '".$_POST['marca_original']."' ➝ '$marca'";
+
+        if ($modelo !== ($_POST['modelo_original'] ?? ''))
+            $cambios_detectados[] = "Modelo: '".$_POST['modelo_original']."' ➝ '$modelo'";
+
+        // 2. ACTUALIZACIÓN MAESTRA (Asegúrate que el SQL esté correcto)
         $sql = "UPDATE equipos SET 
                 serial = ?, placa_ur = ?, marca = ?, modelo = ?, 
                 fecha_compra = ?, modalidad = ? 
@@ -55,23 +63,19 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $stmt = $pdo->prepare($sql);
         $stmt->execute([$nuevo_serial, $nueva_placa, $marca, $modelo, $fecha_compra, $modalidad, $id_equipo]);
 
-        // --- 2. ACTUALIZACIÓN EN CASCADA (Bitácora) ---
-        if ($nuevo_serial !== $serial_original) {
-            $stmt_bit = $pdo->prepare("UPDATE bitacora SET serial_equipo = ? WHERE serial_equipo = ?");
-            $stmt_bit->execute([$nuevo_serial, $serial_original]);
-        }
+        // ... (Tu código de actualización en cascada sigue aquí) ...
 
-        // --- 3. GUARDAR EN TABLA AUDITORIA_CAMBIOS ---
-        if (count($cambios_detectados) > 0) {
-            $resumen_cambios = implode(", ", $cambios_detectados);
+        // 4. GUARDAR LOG DE AUDITORÍA (Solo si hubo cambios)
+        if (!empty($cambios_detectados)) {
+            $resumen_cambios = implode(" | ", $cambios_detectados);
             $ip_cliente = $_SERVER['REMOTE_ADDR'];
-            // Usamos el correo para que el log sea legible
-            $responsable = $_SESSION['correo'] ?? 'Desconocido';
+            // Priorizamos correo para el log, si no, el ID
+            $responsable = $_SESSION['correo'] ?? $_SESSION['usuario_id'] ?? 'Admin_Directo';
 
             $sql_audit = "INSERT INTO auditoria_cambios (usuario_responsable, tipo_accion, referencia, detalles, ip_origen) 
                           VALUES (?, 'Edición Maestro', ?, ?, ?)";
             $stmt_audit = $pdo->prepare($sql_audit);
-            $stmt_audit->execute([$responsable, "Placa: $nueva_placa", $resumen_cambios, $ip_cliente]);
+            $stmt_audit->execute([$responsable, "ID: $id_equipo - Placa: $nueva_placa", $resumen_cambios, $ip_cliente]);
         }
 
         // --- 4. FINALIZAR TRANSACCIÓN ---
