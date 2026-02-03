@@ -1,7 +1,7 @@
 <?php
 /**
  * public/admin_lugares.php
- * Gestión Maestra de Ubicaciones - Diseño Moderno (CORREGIDO)
+ * Gestión Maestra de Ubicaciones - UX Mejorada (Post-Redirect-Get)
  */
 require_once '../core/db.php';
 require_once '../core/session.php';
@@ -16,7 +16,28 @@ $msg = "";
 $editMode = false;
 $dataEdit = ['id' => '', 'sede' => '', 'nombre' => ''];
 
-// --- PROCESAR POST (Crear / Editar) ---
+// --- 1. DETECTOR DE MENSAJES (Feedback tras redirección) ---
+if (isset($_GET['status'])) {
+    switch ($_GET['status']) {
+        case 'created':
+            $msg = "<div class='toast success'>✅ Ubicación agregada exitosamente.</div>";
+            break;
+        case 'updated':
+            $msg = "<div class='toast success'>🔄 Ubicación actualizada y formulario limpio.</div>";
+            break;
+        case 'deleted':
+            $msg = "<div class='toast success'>🗑️ Ubicación eliminada correctamente.</div>";
+            break;
+        case 'error_integrity':
+            $msg = "<div class='toast warning'>⚠️ No se puede eliminar: El edificio tiene historial activo.<br>Se recomienda DESACTIVARLO en su lugar.</div>";
+            break;
+        case 'error_db':
+            $msg = "<div class='toast error'>❌ Error general de base de datos.</div>";
+            break;
+    }
+}
+
+// --- 2. PROCESAR POST (Crear / Editar) ---
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $action = $_POST['action'] ?? '';
     $sede = $_POST['sede'] ?? '';
@@ -26,48 +47,53 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         if ($action == 'add' && !empty($nombre)) {
             $stmt = $pdo->prepare("INSERT INTO lugares (sede, nombre, estado) VALUES (?, ?, 1)");
             $stmt->execute([$sede, $nombre]);
-            $msg = "<div class='toast success'>✅ Ubicación agregada exitosamente.</div>";
+            // REDIRECCIÓN: Limpia el formulario
+            header("Location: admin_lugares.php?status=created");
+            exit;
         } 
         elseif ($action == 'edit' && !empty($nombre)) {
             $id = $_POST['id'];
             $stmt = $pdo->prepare("UPDATE lugares SET sede = ?, nombre = ? WHERE id = ?");
             $stmt->execute([$sede, $nombre, $id]);
-            $msg = "<div class='toast success'>✏️ Ubicación renombrada correctamente.</div>";
+            // REDIRECCIÓN: Saca al usuario del modo edición
+            header("Location: admin_lugares.php?status=updated");
+            exit;
         }
     } catch (PDOException $e) {
-        $msg = "<div class='toast error'>❌ Error DB: " . $e->getMessage() . "</div>";
+        $msg = "<div class='toast error'>Error DB: " . $e->getMessage() . "</div>";
     }
 }
 
-// --- PROCESAR GET (Eliminar / Toggle / Cargar Edición) ---
+// --- 3. PROCESAR GET (Eliminar / Toggle / Cargar Edición) ---
 if (isset($_GET['action'])) {
     $id = (int)$_GET['id'];
     
-    // 1. ELIMINAR (DELETE)
+    // ELIMINAR
     if ($_GET['action'] == 'delete') {
         try {
             $stmt = $pdo->prepare("DELETE FROM lugares WHERE id = ?");
             $stmt->execute([$id]);
-            $msg = "<div class='toast success'>🗑️ Ubicación eliminada permanentemente.</div>";
+            header("Location: admin_lugares.php?status=deleted");
+            exit;
         } catch (PDOException $e) {
-            // Error 23000 es violación de integridad (Foreign Key)
-            if ($e->getCode() == '23000') {
-                $msg = "<div class='toast warning'>⚠️ No se puede eliminar: Este edificio ya tiene historial. <br>Sugerencia: Usa el botón de estado para desactivarlo.</div>";
+            if ($e->getCode() == '23000') { // Violación de llave foránea
+                header("Location: admin_lugares.php?status=error_integrity");
             } else {
-                $msg = "<div class='toast error'>Error: " . $e->getMessage() . "</div>";
+                header("Location: admin_lugares.php?status=error_db");
             }
+            exit;
         }
     }
     
-    // 2. CAMBIAR ESTADO (TOGGLE)
+    // TOGGLE ESTADO
     if ($_GET['action'] == 'toggle') {
         $stmt = $pdo->prepare("UPDATE lugares SET estado = NOT estado WHERE id = ?");
         $stmt->execute([$id]);
-        header("Location: admin_lugares.php"); 
+        header("Location: admin_lugares.php"); // Recarga simple
         exit;
     }
     
-    // 3. CARGAR PARA EDICIÓN
+    // CARGAR PARA EDICIÓN
     if ($_GET['action'] == 'edit') {
         $stmt = $pdo->prepare("SELECT * FROM lugares WHERE id = ?");
         $stmt->execute([$id]);
@@ -113,7 +139,6 @@ $lugares = $pdo->query("SELECT * FROM lugares ORDER BY sede ASC, nombre ASC")->f
             padding: 25px;
         }
 
-        /* Cabecera */
         header {
             display: flex;
             justify-content: space-between;
@@ -126,7 +151,7 @@ $lugares = $pdo->query("SELECT * FROM lugares ORDER BY sede ASC, nombre ASC")->f
         .btn-back { text-decoration: none; color: #666; font-weight: 500; display: flex; align-items: center; gap: 5px;}
         .btn-back:hover { color: var(--primary); }
 
-        /* Formulario Compacto */
+        /* Formulario */
         .form-card {
             background: #fafbfc;
             border: 1px solid var(--border);
@@ -151,7 +176,6 @@ $lugares = $pdo->query("SELECT * FROM lugares ORDER BY sede ASC, nombre ASC")->f
         input[type="text"] { flex-grow: 1; min-width: 200px; }
         select:focus, input:focus { border-color: var(--primary); box-shadow: 0 0 0 2px rgba(0,45,114,0.1); }
 
-        /* Botones */
         .btn {
             padding: 8px 16px;
             border: none;
@@ -168,7 +192,6 @@ $lugares = $pdo->query("SELECT * FROM lugares ORDER BY sede ASC, nombre ASC")->f
         .btn-success { background: #28a745; color: white; }
         .btn-cancel { background: #6c757d; color: white; text-decoration: none; display: inline-block;}
 
-        /* Tabla Refinada */
         .search-wrapper { position: relative; margin-bottom: 15px; }
         .search-box { width: 100%; padding: 8px 10px 8px 30px; border: 1px solid var(--border); border-radius: 4px; box-sizing: border-box;}
         .search-icon { position: absolute; left: 10px; top: 9px; color: #999; }
@@ -178,19 +201,17 @@ $lugares = $pdo->query("SELECT * FROM lugares ORDER BY sede ASC, nombre ASC")->f
         td { padding: 8px 10px; border-bottom: 1px solid #eee; vertical-align: middle; }
         tr:hover { background-color: #f8faff; }
 
-        /* Acciones */
         .actions { display: flex; gap: 5px; }
         .action-btn {
             padding: 4px 8px;
             border-radius: 4px;
             text-decoration: none;
-            font-size: 14px; /* Iconos un poco más grandes */
+            font-size: 14px;
             border: 1px solid transparent;
             transition: background 0.2s;
         }
         .btn-edit { color: #0056b3; background: #e7f1ff; }
         .btn-edit:hover { background: #d0e4ff; }
-        
         .btn-del { color: #dc3545; background: #ffebeb; }
         .btn-del:hover { background: #ffd1d1; }
 
@@ -198,12 +219,10 @@ $lugares = $pdo->query("SELECT * FROM lugares ORDER BY sede ASC, nombre ASC")->f
         .active { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
         .inactive { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
 
-        /* Feedback Toasts */
         .toast { padding: 10px 15px; border-radius: 4px; margin-bottom: 15px; font-size: 13px; border-left: 4px solid transparent; }
         .toast.success { background: #d4edda; color: #155724; border-color: #28a745; }
         .toast.error { background: #f8d7da; color: #721c24; border-color: #dc3545; }
         .toast.warning { background: #fff3cd; color: #856404; border-color: #ffc107; }
-
     </style>
 </head>
 <body>
@@ -276,15 +295,10 @@ $lugares = $pdo->query("SELECT * FROM lugares ORDER BY sede ASC, nombre ASC")->f
                 </td>
                 <td style="text-align: right;">
                     <div class="actions" style="justify-content: flex-end;">
-                        <a href="?action=edit&id=<?= $l['id'] ?>" class="action-btn btn-edit" title="Renombrar / Editar">
-                            ✏️
-                        </a>
-                        
+                        <a href="?action=edit&id=<?= $l['id'] ?>" class="action-btn btn-edit" title="Renombrar / Editar">✏️</a>
                         <a href="?action=delete&id=<?= $l['id'] ?>" class="action-btn btn-del" 
                            onclick="return confirm('⚠️ ¿Estás seguro de ELIMINAR este lugar?\n\nSi el lugar tiene historial, la operación se cancelará por seguridad.')" 
-                           title="Eliminar permanentemente">
-                            🗑️
-                        </a>
+                           title="Eliminar permanentemente">🗑️</a>
                     </div>
                 </td>
             </tr>
