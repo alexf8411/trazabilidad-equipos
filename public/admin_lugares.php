@@ -1,7 +1,7 @@
 <?php
 /**
  * public/admin_lugares.php
- * Gestión Maestra de Ubicaciones - Diseño Moderno
+ * Gestión Maestra de Ubicaciones - Diseño Moderno (CORREGIDO)
  */
 require_once '../core/db.php';
 require_once '../core/session.php';
@@ -52,7 +52,7 @@ if (isset($_GET['action'])) {
         } catch (PDOException $e) {
             // Error 23000 es violación de integridad (Foreign Key)
             if ($e->getCode() == '23000') {
-                $msg = "<div class='toast warning'>⚠️ No se puede eliminar: Este edificio ya tiene historial en la bitácora. <br>Sugerencia: Usa el botón de estado para desactivarlo.</div>";
+                $msg = "<div class='toast warning'>⚠️ No se puede eliminar: Este edificio ya tiene historial. <br>Sugerencia: Usa el botón de estado para desactivarlo.</div>";
             } else {
                 $msg = "<div class='toast error'>Error: " . $e->getMessage() . "</div>";
             }
@@ -100,13 +100,13 @@ $lugares = $pdo->query("SELECT * FROM lugares ORDER BY sede ASC, nombre ASC")->f
             background-color: var(--bg);
             color: var(--text);
             margin: 0;
-            padding: 20px; /* Espacio externo para evitar cortes */
-            font-size: 13px; /* Fuente refinada */
+            padding: 20px;
+            font-size: 13px;
         }
 
         .main-wrapper {
             max-width: 1000px;
-            margin: 20px auto; /* Centrado y margen superior extra */
+            margin: 20px auto;
             background: var(--white);
             border-radius: 8px;
             box-shadow: 0 4px 12px rgba(0,0,0,0.05);
@@ -196,4 +196,121 @@ $lugares = $pdo->query("SELECT * FROM lugares ORDER BY sede ASC, nombre ASC")->f
 
         .btn-status { font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: bold; text-decoration: none; }
         .active { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
-        .inactive { background: #f8d7da; color: #721c24; border: 1
+        .inactive { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+
+        /* Feedback Toasts */
+        .toast { padding: 10px 15px; border-radius: 4px; margin-bottom: 15px; font-size: 13px; border-left: 4px solid transparent; }
+        .toast.success { background: #d4edda; color: #155724; border-color: #28a745; }
+        .toast.error { background: #f8d7da; color: #721c24; border-color: #dc3545; }
+        .toast.warning { background: #fff3cd; color: #856404; border-color: #ffc107; }
+
+    </style>
+</head>
+<body>
+
+<div class="main-wrapper">
+    
+    <header>
+        <h1>🏢 Sedes y Edificios</h1>
+        <a href="dashboard.php" class="btn-back">⬅ Volver al Dashboard</a>
+    </header>
+
+    <?= $msg ?>
+
+    <form method="POST" class="form-card <?= $editMode ? 'editing' : '' ?>">
+        <input type="hidden" name="action" value="<?= $editMode ? 'edit' : 'add' ?>">
+        <?php if ($editMode): ?>
+            <input type="hidden" name="id" value="<?= $dataEdit['id'] ?>">
+        <?php endif; ?>
+
+        <div style="font-weight: bold; color: var(--primary); margin-right: 10px;">
+            <?= $editMode ? 'EDITAR:' : 'NUEVO:' ?>
+        </div>
+
+        <select name="sede" required>
+            <option value="" disabled <?= !$editMode ? 'selected' : '' ?>>-- Seleccionar Sede --</option>
+            <?php 
+            $opts = ['Sede Única', 'Centro', 'Quinta de Mutis', 'SEIC'];
+            foreach ($opts as $o) {
+                $sel = ($editMode && $dataEdit['sede'] == $o) ? 'selected' : '';
+                echo "<option value='$o' $sel>$o</option>";
+            }
+            ?>
+        </select>
+
+        <input type="text" name="nombre" placeholder="Nombre del edificio, bodega o espacio..." required 
+               value="<?= htmlspecialchars($dataEdit['nombre']) ?>" autocomplete="off">
+
+        <button type="submit" class="btn <?= $editMode ? 'btn-success' : 'btn-primary' ?>">
+            <?= $editMode ? 'Guardar Cambios' : 'Agregar' ?>
+        </button>
+
+        <?php if ($editMode): ?>
+            <a href="admin_lugares.php" class="btn btn-cancel">Cancelar</a>
+        <?php endif; ?>
+    </form>
+
+    <div class="search-wrapper">
+        <span class="search-icon">🔍</span>
+        <input type="text" id="searchInput" class="search-box" onkeyup="filterTable()" placeholder="Filtrar por nombre o sede...">
+    </div>
+
+    <table id="lugaresTable">
+        <thead>
+            <tr>
+                <th width="20%">Sede</th>
+                <th width="45%">Nombre</th>
+                <th width="15%">Estado</th>
+                <th width="20%" style="text-align: right;">Acciones</th>
+            </tr>
+        </thead>
+        <tbody>
+            <?php foreach ($lugares as $l): ?>
+            <tr>
+                <td style="color: var(--primary); font-weight: 500;"><?= htmlspecialchars($l['sede']) ?></td>
+                <td style="font-weight: 600;"><?= htmlspecialchars($l['nombre']) ?></td>
+                <td>
+                    <a href="?action=toggle&id=<?= $l['id'] ?>" class="btn-status <?= $l['estado'] ? 'active' : 'inactive' ?>" title="Clic para cambiar estado">
+                        <?= $l['estado'] ? 'ACTIVO' : 'INACTIVO' ?>
+                    </a>
+                </td>
+                <td style="text-align: right;">
+                    <div class="actions" style="justify-content: flex-end;">
+                        <a href="?action=edit&id=<?= $l['id'] ?>" class="action-btn btn-edit" title="Renombrar / Editar">
+                            ✏️
+                        </a>
+                        
+                        <a href="?action=delete&id=<?= $l['id'] ?>" class="action-btn btn-del" 
+                           onclick="return confirm('⚠️ ¿Estás seguro de ELIMINAR este lugar?\n\nSi el lugar tiene historial, la operación se cancelará por seguridad.')" 
+                           title="Eliminar permanentemente">
+                            🗑️
+                        </a>
+                    </div>
+                </td>
+            </tr>
+            <?php endforeach; ?>
+        </tbody>
+    </table>
+
+</div>
+
+<script>
+function filterTable() {
+    let input = document.getElementById("searchInput");
+    let filter = input.value.toUpperCase();
+    let table = document.getElementById("lugaresTable");
+    let tr = table.getElementsByTagName("tr");
+
+    for (let i = 1; i < tr.length; i++) {
+        let tdSede = tr[i].getElementsByTagName("td")[0];
+        let tdNombre = tr[i].getElementsByTagName("td")[1];
+        if (tdSede || tdNombre) {
+            let txtValue = (tdSede.textContent || tdSede.innerText) + " " + (tdNombre.textContent || tdNombre.innerText);
+            tr[i].style.display = txtValue.toUpperCase().indexOf(filter) > -1 ? "" : "none";
+        }
+    }
+}
+</script>
+
+</body>
+</html>
