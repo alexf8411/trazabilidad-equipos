@@ -7,6 +7,24 @@
 require_once '../core/db.php';
 require_once '../core/session.php';
 
+// 1. SEGURIDAD: Solo usuarios autenticados
+if (!isset($_SESSION['logged_in'])) {
+    header("Location: login.php");
+    exit;
+}
+
+// 2. --- NUEVO: DETECTOR DE MENSAJES DEL SISTEMA ---
+$mensaje_sistema = "";
+if (isset($_GET['status'])) {
+    if ($_GET['status'] == 'updated') {
+        $placa_msg = htmlspecialchars($_GET['p'] ?? 'Equipo');
+        $mensaje_sistema = "
+        <div style='background:#d4edda; color:#155724; padding:15px; border-radius:5px; margin: 0 auto 20px auto; max-width: 1350px; border-left:5px solid #28a745; box-shadow: 0 2px 5px rgba(0,0,0,0.1); font-family: sans-serif;'>
+            ✅ <strong>Cambios Guardados:</strong> La información del equipo <u>$placa_msg</u> se actualizó y se registró en la auditoría.
+        </div>";
+    }
+}
+
 // --- CONFIGURACIÓN DE PAGINACIÓN ---
 $registros_por_pagina = 20;
 $pagina_actual = isset($_GET['page']) ? (int)$_GET['page'] : 1;
@@ -19,7 +37,6 @@ $filtro_sql = "";
 $params = [];
 
 if ($busqueda != '') {
-    // Usamos marcadores únicos para evitar error HY093
     $filtro_sql = "AND (
         e.placa_ur LIKE :p1 OR 
         e.serial LIKE :p2 OR 
@@ -27,26 +44,19 @@ if ($busqueda != '') {
         e.marca LIKE :p4 OR
         b.correo_responsable LIKE :p5
     )";
-    
-    // Asignamos el mismo valor de búsqueda a cada marcador
     $term = "%$busqueda%";
-    $params[':p1'] = $term;
-    $params[':p2'] = $term;
-    $params[':p3'] = $term;
-    $params[':p4'] = $term;
-    $params[':p5'] = $term;
+    $params[':p1'] = $term; $params[':p2'] = $term; $params[':p3'] = $term; 
+    $params[':p4'] = $term; $params[':p5'] = $term;
 }
 
-// --- CONSULTA SQL MAESTRA (JOIN ÓPTIMO) ---
-// Explicación: Seleccionamos el equipo y hacemos JOIN con el ÚLTIMO evento registrado en bitácora
-// para saber su ubicación actual real sin subconsultas lentas fila por fila.
-
 try {
-    // 1. Contar total de resultados (para calcular páginas)
+    // 1. Contar total de resultados
     $sql_count = "SELECT COUNT(*) FROM equipos e 
                   LEFT JOIN (
-                      SELECT serial_equipo, correo_responsable FROM bitacora 
-                      WHERE id_evento IN (SELECT MAX(id_evento) FROM bitacora GROUP BY serial_equipo)
+                      SELECT b1.serial_equipo, b1.correo_responsable 
+                      FROM bitacora b1
+                      INNER JOIN (SELECT serial_equipo, MAX(id_evento) as max_id FROM bitacora GROUP BY serial_equipo) b2 
+                      ON b1.id_evento = b2.max_id
                   ) b ON e.serial = b.serial_equipo
                   WHERE 1=1 $filtro_sql";
     
@@ -55,44 +65,27 @@ try {
     $total_registros = $stmt_count->fetchColumn();
     $total_paginas = ceil($total_registros / $registros_por_pagina);
 
-    // 2. Obtener los datos paginados
-    // Nota: El sub-join complejo es para obtener UBICACIÓN y RESPONSABLE actuales.
-    $sql_data = "SELECT 
-                    e.*,
-                    b.sede,
-                    b.ubicacion,
-                    b.tipo_evento,
-                    b.correo_responsable,
-                    b.hostname
+    // 2. Obtener datos con JOIN a la última ubicación conocida
+    $sql_data = "SELECT e.*, b.sede, b.ubicacion, b.tipo_evento, b.correo_responsable, b.hostname
                  FROM equipos e
                  LEFT JOIN (
-                    SELECT b1.*
-                    FROM bitacora b1
-                    INNER JOIN (
-                        SELECT serial_equipo, MAX(id_evento) as max_id
-                        FROM bitacora
-                        GROUP BY serial_equipo
-                    ) b2 ON b1.serial_equipo = b2.serial_equipo AND b1.id_evento = b2.max_id
+                    SELECT b1.* FROM bitacora b1
+                    INNER JOIN (SELECT serial_equipo, MAX(id_evento) as max_id FROM bitacora GROUP BY serial_equipo) b2 
+                    ON b1.serial_equipo = b2.serial_equipo AND b1.id_evento = b2.max_id
                  ) b ON e.serial = b.serial_equipo
                  WHERE 1=1 $filtro_sql
                  ORDER BY e.creado_en DESC
                  LIMIT :limit OFFSET :offset";
 
     $stmt = $pdo->prepare($sql_data);
-    
-    // Bindear parámetros de búsqueda
-    foreach ($params as $key => $val) {
-        $stmt->bindValue($key, $val);
-    }
-    // Bindear parámetros de paginación (deben ser enteros)
+    foreach ($params as $key => $val) { $stmt->bindValue($key, $val); }
     $stmt->bindValue(':limit', $registros_por_pagina, PDO::PARAM_INT);
     $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
-    
     $stmt->execute();
     $equipos = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 } catch (PDOException $e) {
-    die("Error de carga: " . $e->getMessage());
+    die("Error crítico de base de datos. Contacte al administrador.");
 }
 ?>
 
@@ -102,56 +95,35 @@ try {
     <meta charset="UTF-8">
     <title>Inventario General - URTRACK</title>
     <style>
-        :root {
-            --primary: #002D72;
-            --secondary: #e7f1ff;
-            --text: #333;
-            --border: #e1e4e8;
-            --bg: #f8f9fa;
-        }
+        /* ... (Tus estilos se mantienen igual) ... */
+        :root { --primary: #002D72; --secondary: #e7f1ff; --text: #333; --border: #e1e4e8; --bg: #f8f9fa; }
         body { font-family: 'Segoe UI', system-ui, sans-serif; background-color: var(--bg); color: var(--text); padding: 20px; margin: 0; }
-        
         .layout-container { max-width: 1400px; margin: 0 auto; background: white; padding: 25px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
-
-        /* Header y Buscador */
         .top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 15px; }
         .page-title { margin: 0; color: var(--primary); border-left: 5px solid #ffc107; padding-left: 15px; }
-        
         .search-form { display: flex; gap: 10px; flex-grow: 1; max-width: 500px; }
-        .search-input { width: 100%; padding: 10px 15px; border: 1px solid #ccc; border-radius: 20px; outline: none; transition: border 0.3s; }
-        .search-input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(0,45,114,0.1); }
+        .search-input { width: 100%; padding: 10px 15px; border: 1px solid #ccc; border-radius: 20px; outline: none; }
         .btn-search { background: var(--primary); color: white; border: none; padding: 0 20px; border-radius: 20px; cursor: pointer; }
         .btn-back { text-decoration: none; color: #666; font-weight: 500; }
-
-        /* Tabla de Datos */
         .table-responsive { overflow-x: auto; }
         table { width: 100%; border-collapse: collapse; font-size: 0.9rem; min-width: 1000px; }
-        
-        thead th { background-color: var(--primary); color: white; text-align: left; padding: 12px 15px; font-weight: 600; letter-spacing: 0.5px; }
-        tbody tr { border-bottom: 1px solid var(--border); transition: background 0.1s; }
+        thead th { background-color: var(--primary); color: white; text-align: left; padding: 12px 15px; }
+        tbody tr { border-bottom: 1px solid var(--border); }
         tbody tr:hover { background-color: var(--secondary); }
         td { padding: 10px 15px; vertical-align: middle; }
-
-        /* Badges y Estados */
-        .badge { padding: 4px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: bold; }
-        .badge-modalidad { background: #eee; color: #555; border: 1px solid #ddd; }
+        .badge-modalidad { background: #eee; color: #555; border: 1px solid #ddd; padding: 4px 8px; border-radius: 4px; font-size: 0.75rem; }
         .status-alta { color: #28a745; font-weight: bold; }
         .status-baja { color: #dc3545; font-weight: bold; }
-
-        /* Paginación */
         .pagination { display: flex; justify-content: center; margin-top: 30px; gap: 5px; }
         .page-link { padding: 8px 12px; border: 1px solid var(--border); text-decoration: none; color: var(--primary); border-radius: 4px; }
-        .page-link.active { background: var(--primary); color: white; border-color: var(--primary); }
-        .page-link:hover:not(.active) { background: #eee; }
-
-        /* Botones de Acción */
-        .btn-icon { text-decoration: none; font-size: 1.1rem; padding: 5px; border-radius: 4px; display: inline-block; }
-        .btn-icon:hover { background-color: rgba(0,0,0,0.1); }
-        
+        .page-link.active { background: var(--primary); color: white; }
+        .btn-icon { text-decoration: none; font-size: 1.1rem; padding: 5px; }
         .empty-state { text-align: center; padding: 40px; color: #777; font-style: italic; }
     </style>
 </head>
 <body>
+
+    <?= $mensaje_sistema ?>
 
 <div class="layout-container">
     
@@ -159,16 +131,16 @@ try {
         <div>
             <h1 class="page-title">📦 Inventario General</h1>
             <small style="color: #666; margin-left: 20px;">
-                Total Equipos: <strong><?= number_format($total_registros) ?></strong>
-                <?php if($busqueda): ?> (Filtrado por: "<?= htmlspecialchars($busqueda) ?>") <?php endif; ?>
+                Mostrando página <strong><?= $pagina_actual ?></strong> de <strong><?= $total_paginas ?></strong> 
+                (Total: <?= number_format($total_registros) ?> registros)
             </small>
         </div>
 
         <form class="search-form" method="GET">
-            <input type="text" name="q" class="search-input" placeholder="Buscar por Placa, Serial, Modelo o Responsable..." value="<?= htmlspecialchars($busqueda) ?>">
+            <input type="text" name="q" class="search-input" placeholder="Buscar placa, serial, responsable..." value="<?= htmlspecialchars($busqueda) ?>">
             <button type="submit" class="btn-search">🔍</button>
             <?php if($busqueda): ?>
-                <a href="inventario.php" style="padding: 10px; color: #dc3545; text-decoration: none;" title="Limpiar filtro">✕</a>
+                <a href="inventario.php" style="padding: 10px; color: #dc3545; text-decoration: none;">✕</a>
             <?php endif; ?>
         </form>
 
@@ -193,22 +165,17 @@ try {
                 <?php if (count($equipos) > 0): ?>
                     <?php foreach ($equipos as $eq): ?>
                     <tr>
-                        <td style="font-weight: bold; color: var(--primary);">
-                            <?= htmlspecialchars($eq['placa_ur']) ?>
-                        </td>
+                        <td style="font-weight: bold; color: var(--primary);"><?= htmlspecialchars($eq['placa_ur']) ?></td>
                         <td>
                             <div><?= htmlspecialchars($eq['serial']) ?></div>
                             <?php if(!empty($eq['hostname']) && $eq['hostname'] !== 'PENDIENTE'): ?>
                                 <small style="color: #666;">Host: <?= htmlspecialchars($eq['hostname']) ?></small>
                             <?php endif; ?>
                         </td>
-                        <td>
-                            <?= htmlspecialchars($eq['marca']) ?> 
-                            <span style="color:#666;"><?= htmlspecialchars($eq['modelo']) ?></span>
-                        </td>
+                        <td><?= htmlspecialchars($eq['marca']) ?> <span style="color:#666;"><?= htmlspecialchars($eq['modelo']) ?></span></td>
                         <td>
                             <div style="font-size: 0.85rem;"><?= date('d/m/Y', strtotime($eq['fecha_compra'])) ?></div>
-                            <span class="badge badge-modalidad"><?= $eq['modalidad'] ?></span>
+                            <span class="badge-modalidad"><?= $eq['modalidad'] ?></span>
                         </td>
                         <td>
                             <?php if ($eq['ubicacion']): ?>
@@ -218,35 +185,18 @@ try {
                                 <span style="color: #999;">Sin movimientos</span>
                             <?php endif; ?>
                         </td>
-                        <td>
-                            <div style="font-size:0.9rem;"><?= htmlspecialchars($eq['correo_responsable'] ?? 'N/A') ?></div>
-                        </td>
-                        <td>
-                            <span class="<?= $eq['estado_maestro'] == 'Alta' ? 'status-alta' : 'status-baja' ?>">
-                                <?= $eq['estado_maestro'] ?>
-                            </span>
-                        </td>
+                        <td><div style="font-size:0.9rem;"><?= htmlspecialchars($eq['correo_responsable'] ?? 'N/A') ?></div></td>
+                        <td><span class="<?= $eq['estado_maestro'] == 'Alta' ? 'status-alta' : 'status-baja' ?>"><?= $eq['estado_maestro'] ?></span></td>
                         <td style="text-align: center; white-space: nowrap;">
-                            
-                            <a href="historial.php?serial=<?= $eq['serial'] ?>" class="btn-icon" title="Ver Trazabilidad Completa">
-                                👁️
-                            </a>
-
+                            <a href="historial.php?serial=<?= $eq['serial'] ?>" class="btn-icon" title="Ver Trazabilidad">👁️</a>
                             <?php if (in_array($_SESSION['rol'], ['Administrador', 'Recursos'])): ?>
-                                <a href="editar_equipo.php?id=<?= $eq['id_equipo'] ?>" class="btn-icon" title="Editar Maestro" style="color: #d39e00;">
-                                    ✏️
-                                </a>
+                                <a href="editar_equipo.php?id=<?= $eq['id_equipo'] ?>" class="btn-icon" title="Editar" style="color: #d39e00;">✏️</a>
                             <?php endif; ?>
-
                         </td>
                     </tr>
                     <?php endforeach; ?>
                 <?php else: ?>
-                    <tr>
-                        <td colspan="8" class="empty-state">
-                            No se encontraron equipos registrados con esos criterios.
-                        </td>
-                    </tr>
+                    <tr><td colspan="8" class="empty-state">No se encontraron resultados.</td></tr>
                 <?php endif; ?>
             </tbody>
         </table>
@@ -260,9 +210,7 @@ try {
 
         <?php for ($i = 1; $i <= $total_paginas; $i++): ?>
             <?php if ($i == 1 || $i == $total_paginas || ($i >= $pagina_actual - 2 && $i <= $pagina_actual + 2)): ?>
-                <a href="?page=<?= $i ?>&q=<?= urlencode($busqueda) ?>" class="page-link <?= $i == $pagina_actual ? 'active' : '' ?>">
-                    <?= $i ?>
-                </a>
+                <a href="?page=<?= $i ?>&q=<?= urlencode($busqueda) ?>" class="page-link <?= $i == $pagina_actual ? 'active' : '' ?>"><?= $i ?></a>
             <?php elseif ($i == $pagina_actual - 3 || $i == $pagina_actual + 3): ?>
                 <span style="padding: 8px;">...</span>
             <?php endif; ?>
@@ -273,8 +221,6 @@ try {
         <?php endif; ?>
     </div>
     <?php endif; ?>
-
 </div>
-
 </body>
 </html>
