@@ -73,21 +73,21 @@ if (!isset($_SESSION['logged_in']) || $_SESSION['logged_in'] !== true) {
 
 <div class="container">
     <div class="welcome-card">
-    <div class="user-info">
-        <h2>
-            Hola, <?php echo htmlspecialchars($_SESSION['nombre']); ?>
-        </h2>
-        <p class="subtitle">
-            Rol actual: <span class="badge-rol <?php echo $_SESSION['rol']; ?>">
-                <?php echo htmlspecialchars($_SESSION['rol']); ?>
-            </span>
-            | Depto: <?php echo htmlspecialchars($_SESSION['depto'] ?? 'General'); ?>
-        </p>
+        <div class="user-info">
+            <h2>
+                Hola, <?php echo htmlspecialchars($_SESSION['nombre']); ?>
+            </h2>
+            <p class="subtitle">
+                Rol actual: <span class="badge-rol <?php echo $_SESSION['rol']; ?>">
+                    <?php echo htmlspecialchars($_SESSION['rol']); ?>
+                </span>
+                | Depto: <?php echo htmlspecialchars($_SESSION['depto'] ?? 'General'); ?>
+            </p>
+        </div>
+        <div>
+            <a href="logout.php" class="btn-logout">Cerrar Sesión</a>
+        </div>
     </div>
-    <div>
-        <a href="logout.php" class="btn-logout">Cerrar Sesión</a>
-    </div>
-</div>
 
     <div class="actions-grid">
         
@@ -101,6 +101,11 @@ if (!isset($_SESSION['logged_in']) || $_SESSION['logged_in'] !== true) {
             <a href="admin_usuarios.php" class="action-card card-admin">
                 <h3>👥 Gestión de Usuarios</h3>
                 <p>Autorizar accesos y asignar roles (RBAC).</p>
+            </a>
+
+            <a href="admin_lugares.php" class="action-card card-admin">
+                <h3>🏢 Sedes y Edificios</h3>
+                <p>Configurar ubicaciones, sedes y bodegas.</p>
             </a>
 
             <a href="auditoria.php" class="action-card card-admin" style="border-top-color: #343a40;">
