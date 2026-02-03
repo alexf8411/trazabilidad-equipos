@@ -1,12 +1,12 @@
 <?php
 /**
  * public/importar_csv.php
- * Importación masiva con detector de duplicados amigable y lógica sincronizada
+ * Importación masiva con detector inteligente de encabezados
  */
 require_once '../core/db.php';
 require_once '../core/session.php';
 
-// 1. CONFIGURACIÓN DE PODER (Aprovechando tus 7GB RAM)
+// 1. CONFIGURACIÓN DE PODER
 set_time_limit(600); 
 ini_set('memory_limit', '2G'); 
 
@@ -14,14 +14,10 @@ if (!in_array($_SESSION['rol'], ['Administrador', 'Recursos'])) {
     die("No tienes permisos para esta acción.");
 }
 
-/**
- * Función para procesar cada fila del CSV
- * Sincronizada con la lógica de alta_equipos.php
- */
+// --- FUNCIÓN DE PROCESAMIENTO (FUERA DEL TRY PARA EVITAR ERRORES) ---
 function procesarFila($data, $stmt_eq, $stmt_bit, $bodega, &$exitos) {
     if (count($data) < 2 || empty($data[0]) || empty($data[1])) return;
 
-    // Limpieza y Normalización
     $placa     = strtoupper(trim($data[0]));
     $serial    = strtoupper(trim($data[1]));
     $marca     = trim($data[2]);
@@ -30,24 +26,13 @@ function procesarFila($data, $stmt_eq, $stmt_bit, $bodega, &$exitos) {
     $modalidad = trim($data[5]);
     $fecha_evento = date('Y-m-d H:i:s');
 
-    // Escudo de Fechas (DD/MM/AAAA a YYYY-MM-DD)
     $fecha_normalizada = str_replace(['/', '.'], '-', $raw_fecha);
     $timestamp = strtotime($fecha_normalizada);
     $fecha_compra = ($timestamp) ? date('Y-m-d', $timestamp) : date('Y-m-d');
 
-    // 1. Insertar en tabla Equipos
     $stmt_eq->execute([$placa, $serial, $marca, $modelo, $fecha_compra, $modalidad]);
-    
-    // 2. Insertar en tabla Bitácora (Sincronizado con carga individual)
-    $stmt_bit->execute([
-        $serial, 
-        $bodega['id'], 
-        $bodega['sede'], 
-        $bodega['nombre'], 
-        $fecha_evento, 
-        $_SESSION['nombre']
-    ]);
-    
+    // Nota: $_SESSION['nombre'] es accesible globalmente
+    $stmt_bit->execute([$serial, $bodega['id'], $bodega['sede'], $bodega['nombre'], $fecha_evento, $_SESSION['nombre']]);
     $exitos++;
 }
 
@@ -62,7 +47,7 @@ if (isset($_POST['importar'])) {
         $errores[] = "Por favor, selecciona un archivo CSV.";
     } else {
         try {
-            // A. LOCALIZAR BODEGA (Debe existir en la tabla lugares)
+            // A. LOCALIZAR BODEGA
             $stmt_bodega = $pdo->prepare("SELECT id, sede, nombre FROM lugares WHERE nombre = 'Bodega de Tecnología' LIMIT 1");
             $stmt_bodega->execute();
             $bodega = $stmt_bodega->fetch(PDO::FETCH_ASSOC);
@@ -74,7 +59,7 @@ if (isset($_POST['importar'])) {
             $handle = fopen($archivo, "r");
             $pdo->beginTransaction();
 
-            // Preparar Consultas
+            // Preparar consultas
             $stmt_eq = $pdo->prepare("INSERT INTO equipos (placa_ur, serial, marca, modelo, fecha_compra, modalidad, estado_maestro) VALUES (?, ?, ?, ?, ?, ?, 'Alta')");
             $stmt_bit = $pdo->prepare("INSERT INTO bitacora (serial_equipo, id_lugar, sede, ubicacion, tipo_evento, correo_responsable, fecha_evento, tecnico_responsable, hostname) VALUES (?, ?, ?, ?, 'Ingreso', 'Bodega de TI', ?, ?, 'PENDIENTE')");
 
@@ -89,25 +74,15 @@ if (isset($_POST['importar'])) {
                 }
             }
 
-            // --- PROCESAR EL RESTO DEL ARCHIVO ---
+            // --- PROCESAR EL RESTO ---
             while (($data = fgetcsv($handle, 1000, ",")) !== FALSE) {
                 procesarFila($data, $stmt_eq, $stmt_bit, $bodega, $exitos);
             }
             
             $pdo->commit();
-            $mensaje_exito = "✅ ¡Éxito! Se han importado $exitos equipos correctamente a la Bodega.";
+            $mensaje_exito = "✅ ¡Éxito! Se han importado $exitos equipos correctamente.";
             fclose($handle);
 
-        } catch (PDOException $e) {
-            if ($pdo->inTransaction()) $pdo->rollBack();
-            
-            if ($e->getCode() == '23000') {
-                preg_match("/Duplicate entry '(.*)' for key/", $e->getMessage(), $matches);
-                $valor = $matches[1] ?? "desconocido";
-                $errores[] = "⚠️ <b>Error de Duplicado:</b> El equipo con placa o serial <b>'$valor'</b> ya existe en la base de datos. Se canceló la carga para evitar errores.";
-            } else {
-                $errores[] = "❌ Error de Base de Datos: " . $e->getMessage();
-            }
         } catch (Exception $e) {
             if ($pdo->inTransaction()) $pdo->rollBack();
             $errores[] = "❌ Error: " . $e->getMessage();
@@ -125,16 +100,24 @@ if (isset($_POST['importar'])) {
         :root { --primary: #002D72; --bg: #f4f6f9; --warning: #ffc107; }
         body { font-family: 'Segoe UI', sans-serif; background: var(--bg); padding: 40px; }
         .import-card { max-width: 750px; margin: 0 auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); }
+        
+        /* Instrucciones Anti-Tontos */
         .instruction-box { background: #fff8e1; border: 2px solid var(--warning); padding: 20px; border-radius: 8px; margin-bottom: 25px; }
+        .instruction-box h3 { margin-top: 0; color: #856404; display: flex; align-items: center; gap: 10px; }
+        
         .csv-table { width: 100%; border-collapse: collapse; margin: 15px 0; font-size: 0.85rem; }
         .csv-table th { background: #eee; border: 1px solid #ccc; padding: 8px; text-align: left; }
         .csv-table td { border: 1px solid #ccc; padding: 8px; }
+        
         .date-alert { background: #d1ecf1; color: #0c5460; padding: 10px; border-radius: 5px; border-left: 5px solid #17a2b8; margin-top: 10px; font-weight: bold; }
+        
         .alert { padding: 15px; border-radius: 5px; margin-bottom: 20px; font-weight: 500; }
         .alert-error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
         .alert-success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
-        input[type="file"] { margin: 20px 0; display: block; width: 100%; padding: 15px; background: #f8f9fa; border: 2px dashed var(--primary); border-radius: 8px; cursor: pointer; }
-        .btn-import { background: var(--primary); color: white; border: none; padding: 16px 25px; border-radius: 6px; cursor: pointer; width: 100%; font-size: 1.1rem; font-weight: bold; }
+        
+        input[type="file"] { margin: 20px 0; display: block; width: 100%; padding: 15px; background: #f8f9fa; border: 2px dashed #002D72; border-radius: 8px; cursor: pointer; }
+        .btn-import { background: var(--primary); color: white; border: none; padding: 16px 25px; border-radius: 6px; cursor: pointer; width: 100%; font-size: 1.1rem; font-weight: bold; transition: 0.3s; }
+        .btn-import:hover { background: #001f52; transform: translateY(-2px); }
         .btn-secondary { display: block; text-align: center; text-decoration: none; color: var(--primary); padding: 10px; margin-top: 20px; font-weight: 500; }
     </style>
 </head>
@@ -152,30 +135,45 @@ if (isset($_POST['importar'])) {
     <?php endforeach; ?>
 
     <div class="instruction-box">
-        <h3 style="margin-top:0; color: #856404;">⚠️ ¡LEER ANTES DE SUBIR!</h3>
-        <p>El archivo debe ser <strong>CSV (delimitado por comas)</strong> con estas 6 columnas:</p>
+        <h3>⚠️ ¡LEER ANTES DE SUBIR!</h3>
+        <p>El archivo Excel debe guardarse como <strong>CSV (delimitado por comas)</strong> y debe tener exactamente estas 6 columnas en este orden:</p>
         
         <table class="csv-table">
             <thead>
                 <tr>
-                    <th>1. Placa</th><th>2. Serial</th><th>3. Marca</th><th>4. Modelo</th><th>5. Fecha</th><th>6. Modalidad</th>
+                    <th>1. Placa</th>
+                    <th>2. Serial</th>
+                    <th>3. Marca</th>
+                    <th>4. Modelo</th>
+                    <th>5. Fecha</th>
+                    <th>6. Modalidad</th>
                 </tr>
             </thead>
             <tbody>
                 <tr>
-                    <td>UR-1001</td><td>SN882233</td><td>HP</td><td>ProBook 440</td><td>25/10/2023</td><td>Leasing</td>
+                    <td>UR-1001</td>
+                    <td>SN882233</td>
+                    <td>HP</td>
+                    <td>ProBook 440</td>
+                    <td>25/10/2023</td>
+                    <td>Leasing</td>
                 </tr>
             </tbody>
         </table>
 
         <div class="date-alert">
-            📅 FORMATO DE FECHA: Use DIA/MES/AÑO (Ejemplo: 31/12/2025).
+            📅 FORMATO DE FECHA: Use DIA/MES/AÑO (Ejemplo: 31/12/2025). <br>
+            <small>El sistema la convertirá automáticamente para la base de datos.</small>
         </div>
+        
+        <p style="margin-bottom:0; font-size: 0.85rem; color: #666;">* No use comas (,) dentro de los textos. No deje filas en blanco.</p>
     </div>
 
     <form method="POST" enctype="multipart/form-data">
-        <label style="font-weight:bold; color:#444;">Seleccione el archivo CSV:</label>
+        <label style="font-weight:bold; color:#444;">Paso 1: Seleccione el archivo CSV</label>
         <input type="file" name="archivo_csv" accept=".csv" required>
+        
+        <label style="font-weight:bold; color:#444;">Paso 2: Ejecute la carga</label>
         <button type="submit" name="importar" class="btn-import">🚀 SUBIR TODO A BODEGA</button>
     </form>
 
