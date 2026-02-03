@@ -14,6 +14,28 @@ if (!in_array($_SESSION['rol'], ['Administrador', 'Recursos'])) {
     die("No tienes permisos para esta acción.");
 }
 
+// --- FUNCIÓN DE PROCESAMIENTO (FUERA DEL TRY PARA EVITAR ERRORES) ---
+function procesarFila($data, $stmt_eq, $stmt_bit, $bodega, &$exitos) {
+    if (count($data) < 2 || empty($data[0]) || empty($data[1])) return;
+
+    $placa     = strtoupper(trim($data[0]));
+    $serial    = strtoupper(trim($data[1]));
+    $marca     = trim($data[2]);
+    $modelo    = trim($data[3]);
+    $raw_fecha = trim($data[4]);
+    $modalidad = trim($data[5]);
+    $fecha_evento = date('Y-m-d H:i:s');
+
+    $fecha_normalizada = str_replace(['/', '.'], '-', $raw_fecha);
+    $timestamp = strtotime($fecha_normalizada);
+    $fecha_compra = ($timestamp) ? date('Y-m-d', $timestamp) : date('Y-m-d');
+
+    $stmt_eq->execute([$placa, $serial, $marca, $modelo, $fecha_compra, $modalidad]);
+    // Nota: $_SESSION['nombre'] es accesible globalmente
+    $stmt_bit->execute([$serial, $bodega['id'], $bodega['sede'], $bodega['nombre'], $fecha_evento, $_SESSION['nombre']]);
+    $exitos++;
+}
+
 $errores = [];
 $exitos = 0;
 $mensaje_exito = "";
@@ -37,47 +59,24 @@ if (isset($_POST['importar'])) {
             $handle = fopen($archivo, "r");
             $pdo->beginTransaction();
 
-            // Preparar consultas sincronizadas con alta_equipos.php
+            // Preparar consultas
             $stmt_eq = $pdo->prepare("INSERT INTO equipos (placa_ur, serial, marca, modelo, fecha_compra, modalidad, estado_maestro) VALUES (?, ?, ?, ?, ?, ?, 'Alta')");
             $stmt_bit = $pdo->prepare("INSERT INTO bitacora (serial_equipo, id_lugar, sede, ubicacion, tipo_evento, correo_responsable, fecha_evento, tecnico_responsable, hostname) VALUES (?, ?, ?, ?, 'Ingreso', 'Bodega de TI', ?, ?, 'PENDIENTE')");
-
-            // FUNCIÓN DE PROCESAMIENTO
-            function procesarFila($data, $stmt_eq, $stmt_bit, $bodega, &$exitos, $_SESSION) {
-                if (count($data) < 2 || empty($data[0]) || empty($data[1])) return;
-
-                $placa     = strtoupper(trim($data[0]));
-                $serial    = strtoupper(trim($data[1]));
-                $marca     = trim($data[2]);
-                $modelo    = trim($data[3]);
-                $raw_fecha = trim($data[4]);
-                $modalidad = trim($data[5]);
-                $fecha_evento = date('Y-m-d H:i:s');
-
-                $fecha_normalizada = str_replace(['/', '.'], '-', $raw_fecha);
-                $timestamp = strtotime($fecha_normalizada);
-                $fecha_compra = ($timestamp) ? date('Y-m-d', $timestamp) : date('Y-m-d');
-
-                $stmt_eq->execute([$placa, $serial, $marca, $modelo, $fecha_compra, $modalidad]);
-                $stmt_bit->execute([$serial, $bodega['id'], $bodega['sede'], $bodega['nombre'], $fecha_evento, $_SESSION['nombre']]);
-                $exitos++;
-            }
 
             // --- DETECTOR INTELIGENTE DE ENCABEZADOS ---
             $primera_fila = fgetcsv($handle, 1000, ",");
             if ($primera_fila) {
                 $check = strtolower(trim($primera_fila[0]));
-                // Lista de palabras que delatan un encabezado (puedes añadir más)
                 $palabras_clave = ['placa', 'id', 'ur', 'placa_ur', 'equipo', 'codigo'];
                 
                 if (!in_array($check, $palabras_clave)) {
-                    // Si no es encabezado, es un equipo real, procesarlo
-                    procesarFila($primera_fila, $stmt_eq, $stmt_bit, $bodega, $exitos, $_SESSION);
+                    procesarFila($primera_fila, $stmt_eq, $stmt_bit, $bodega, $exitos);
                 }
             }
 
             // --- PROCESAR EL RESTO ---
             while (($data = fgetcsv($handle, 1000, ",")) !== FALSE) {
-                procesarFila($data, $stmt_eq, $stmt_bit, $bodega, $exitos, $_SESSION);
+                procesarFila($data, $stmt_eq, $stmt_bit, $bodega, $exitos);
             }
             
             $pdo->commit();
@@ -128,9 +127,6 @@ if (isset($_POST['importar'])) {
         <strong>📋 Instrucciones del Formato:</strong><br>
         Organice su Excel en este orden exacto:<br>
         <span class="code-box">placa, serial, marca, modelo, fecha_compra, modalidad</span>
-        
-        <strong>📅 Formato de Fecha Admitido:</strong><br>
-        Use <code>DD/MM/AAAA</code> (Ejemplo: 03/02/2026).
     </div>
 
     <form method="POST" enctype="multipart/form-data">
