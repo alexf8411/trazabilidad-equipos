@@ -97,23 +97,34 @@ if (isset($_POST['importar'])) {
     <meta charset="UTF-8">
     <title>Importar Equipos - URTRACK</title>
     <style>
-        :root { --primary: #002D72; --bg: #f4f6f9; }
+        :root { --primary: #002D72; --bg: #f4f6f9; --warning: #ffc107; }
         body { font-family: 'Segoe UI', sans-serif; background: var(--bg); padding: 40px; }
-        .import-card { max-width: 650px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        .import-card { max-width: 750px; margin: 0 auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); }
+        
+        /* Instrucciones Anti-Tontos */
+        .instruction-box { background: #fff8e1; border: 2px solid var(--warning); padding: 20px; border-radius: 8px; margin-bottom: 25px; }
+        .instruction-box h3 { margin-top: 0; color: #856404; display: flex; align-items: center; gap: 10px; }
+        
+        .csv-table { width: 100%; border-collapse: collapse; margin: 15px 0; font-size: 0.85rem; }
+        .csv-table th { background: #eee; border: 1px solid #ccc; padding: 8px; text-align: left; }
+        .csv-table td { border: 1px solid #ccc; padding: 8px; }
+        
+        .date-alert { background: #d1ecf1; color: #0c5460; padding: 10px; border-radius: 5px; border-left: 5px solid #17a2b8; margin-top: 10px; font-weight: bold; }
+        
         .alert { padding: 15px; border-radius: 5px; margin-bottom: 20px; font-weight: 500; }
         .alert-error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
         .alert-success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
-        .template-info { background: #e7f1ff; padding: 20px; border-radius: 5px; font-size: 0.9rem; margin-bottom: 25px; border-left: 5px solid var(--primary); }
-        .code-box { background: #fff; padding: 10px; border: 1px solid #b6d4fe; border-radius: 4px; font-family: monospace; display: block; margin: 10px 0; }
-        input[type="file"] { margin: 20px 0; display: block; width: 100%; padding: 10px; background: #f8f9fa; border: 2px dashed #ccc; border-radius: 6px; }
-        .btn-import { background: var(--primary); color: white; border: none; padding: 14px 25px; border-radius: 5px; cursor: pointer; width: 100%; font-size: 1rem; font-weight: bold; }
-        .btn-secondary { display: block; text-align: center; text-decoration: none; color: var(--primary); padding: 10px; border: 1px solid var(--primary); border-radius: 5px; margin-top: 15px; }
+        
+        input[type="file"] { margin: 20px 0; display: block; width: 100%; padding: 15px; background: #f8f9fa; border: 2px dashed #002D72; border-radius: 8px; cursor: pointer; }
+        .btn-import { background: var(--primary); color: white; border: none; padding: 16px 25px; border-radius: 6px; cursor: pointer; width: 100%; font-size: 1.1rem; font-weight: bold; transition: 0.3s; }
+        .btn-import:hover { background: #001f52; transform: translateY(-2px); }
+        .btn-secondary { display: block; text-align: center; text-decoration: none; color: var(--primary); padding: 10px; margin-top: 20px; font-weight: 500; }
     </style>
 </head>
 <body>
 
 <div class="import-card">
-    <h2 style="color:var(--primary); margin-top:0;">📥 Importación Masiva (CSV)</h2>
+    <h2 style="color:var(--primary); margin-top:0; text-align:center;">📥 Carga Masiva de Inventario</h2>
     
     <?php if ($mensaje_exito): ?>
         <div class="alert alert-success"><?= $mensaje_exito ?></div>
@@ -123,19 +134,50 @@ if (isset($_POST['importar'])) {
         <div class="alert alert-error"><?= $error ?></div>
     <?php endforeach; ?>
 
-    <div class="template-info">
-        <strong>📋 Instrucciones del Formato:</strong><br>
-        Organice su Excel en este orden exacto:<br>
-        <span class="code-box">placa, serial, marca, modelo, fecha_compra, modalidad</span>
+    <div class="instruction-box">
+        <h3>⚠️ ¡LEER ANTES DE SUBIR!</h3>
+        <p>El archivo Excel debe guardarse como <strong>CSV (delimitado por comas)</strong> y debe tener exactamente estas 6 columnas en este orden:</p>
+        
+        <table class="csv-table">
+            <thead>
+                <tr>
+                    <th>1. Placa</th>
+                    <th>2. Serial</th>
+                    <th>3. Marca</th>
+                    <th>4. Modelo</th>
+                    <th>5. Fecha</th>
+                    <th>6. Modalidad</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>UR-1001</td>
+                    <td>SN882233</td>
+                    <td>HP</td>
+                    <td>ProBook 440</td>
+                    <td>25/10/2023</td>
+                    <td>Leasing</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div class="date-alert">
+            📅 FORMATO DE FECHA: Use DIA/MES/AÑO (Ejemplo: 31/12/2025). <br>
+            <small>El sistema la convertirá automáticamente para la base de datos.</small>
+        </div>
+        
+        <p style="margin-bottom:0; font-size: 0.85rem; color: #666;">* No use comas (,) dentro de los textos. No deje filas en blanco.</p>
     </div>
 
     <form method="POST" enctype="multipart/form-data">
-        <label style="font-weight:bold; color:#444;">Subir archivo .csv:</label>
+        <label style="font-weight:bold; color:#444;">Paso 1: Seleccione el archivo CSV</label>
         <input type="file" name="archivo_csv" accept=".csv" required>
-        <button type="submit" name="importar" class="btn-import">🚀 Iniciar Carga Masiva</button>
+        
+        <label style="font-weight:bold; color:#444;">Paso 2: Ejecute la carga</label>
+        <button type="submit" name="importar" class="btn-import">🚀 SUBIR TODO A BODEGA</button>
     </form>
 
-    <a href="alta_equipos.php" class="btn-secondary">➕ Volver al Registro Individual</a>
+    <a href="alta_equipos.php" class="btn-secondary">⬅ Volver al Registro Individual</a>
 </div>
 
 </body>
