@@ -118,8 +118,8 @@ $rol = $_SESSION['rol']; // Atajo para escribir menos código
 
         <?php if (in_array($rol, ['Administrador', 'Auditor'])): ?>
             <a href="auditoria.php" class="action-card card-admin" style="border-top-color: #6c757d;">
-                <h3>📜 Auditoría de Accesos</h3>
-                <p>Logs de seguridad, conexiones IP e historial de logins.</p>
+                <h3>📜 Auditoría</h3>
+                <p>Logs de seguridad, cambios e historial de logins.</p>
             </a>
         <?php endif; ?>
 
