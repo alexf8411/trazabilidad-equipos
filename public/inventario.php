@@ -19,15 +19,22 @@ $filtro_sql = "";
 $params = [];
 
 if ($busqueda != '') {
-    // Busca coincidencias en múltiples columnas a la vez
+    // Usamos marcadores únicos para evitar error HY093
     $filtro_sql = "AND (
-        e.placa_ur LIKE :q OR 
-        e.serial LIKE :q OR 
-        e.modelo LIKE :q OR 
-        e.marca LIKE :q OR
-        b.correo_responsable LIKE :q
+        e.placa_ur LIKE :p1 OR 
+        e.serial LIKE :p2 OR 
+        e.modelo LIKE :p3 OR 
+        e.marca LIKE :p4 OR
+        b.correo_responsable LIKE :p5
     )";
-    $params[':q'] = "%$busqueda%";
+    
+    // Asignamos el mismo valor de búsqueda a cada marcador
+    $term = "%$busqueda%";
+    $params[':p1'] = $term;
+    $params[':p2'] = $term;
+    $params[':p3'] = $term;
+    $params[':p4'] = $term;
+    $params[':p5'] = $term;
 }
 
 // --- CONSULTA SQL MAESTRA (JOIN ÓPTIMO) ---
