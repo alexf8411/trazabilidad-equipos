@@ -1,52 +1,42 @@
 <?php
 /**
  * public/api_ldap.php
- * Este archivo actúa como puente seguro entre el JS y el servidor LDAP
  */
-// Subimos un nivel (..) para buscar la configuración en core
-require_once '../core/config_ldap.php'; 
+require_once '../core/config_ldap.php'; // Usa la config nueva
 
 header('Content-Type: application/json');
 
-// 1. Capturar usuario
-$usuario = isset($_GET['usuario']) ? trim($_GET['usuario']) : '';
+// Evitar errores si no hay input
+$usuario_buscado = isset($_GET['usuario']) ? trim($_GET['usuario']) : '';
+if (empty($usuario_buscado)) { echo json_encode(['status' => 'error', 'msg' => 'Vacio']); exit; }
 
-if (empty($usuario)) {
-    echo json_encode(['status' => 'error', 'msg' => 'Usuario vacío']);
-    exit;
-}
+// Conexión
+$ds = ldap_connect(LDAP_HOST, LDAP_PORT);
+if (!$ds) { echo json_encode(['status' => 'error', 'msg' => 'Error Conexión']); exit; }
 
-// 2. Conexión LDAP
-$ldap_conn = ldap_connect(LDAP_HOST, LDAP_PORT);
-if (!$ldap_conn) {
-    echo json_encode(['status' => 'error', 'msg' => 'Error de conexión LDAP']);
-    exit;
-}
+ldap_set_option($ds, LDAP_OPT_PROTOCOL_VERSION, 3);
+ldap_set_option($ds, LDAP_OPT_REFERRALS, 0);
 
-ldap_set_option($ldap_conn, LDAP_OPT_PROTOCOL_VERSION, 3);
-ldap_set_option($ldap_conn, LDAP_OPT_REFERRALS, 0);
-
-// 3. Autenticación (Bind) con usuario de servicio
-$bind = @ldap_bind($ldap_conn, LDAP_ADMIN_USER, LDAP_ADMIN_PASS);
+// Autenticación con la cuenta de servicio (NO con la del usuario logueado)
+$bind = @ldap_bind($ds, LDAP_BIND_USER, LDAP_BIND_PASS);
 
 if ($bind) {
-    // Buscamos por sAMAccountName (el usuario corto, ej: guillermo.fonseca)
-    $filtro = "(sAMAccountName=$usuario)";
-    $busqueda = ldap_search($ldap_conn, LDAP_DN, $filtro, ['cn', 'mail', 'department', 'title']);
-    $info = ldap_get_entries($ldap_conn, $busqueda);
+    // Buscar por sAMAccountName
+    $search = ldap_search($ds, LDAP_BASE_DN, "(sAMAccountName=$usuario_buscado)", ['cn', 'mail', 'department', 'title']);
+    $info = ldap_get_entries($ds, $search);
 
     if ($info['count'] > 0) {
         echo json_encode([
             'status' => 'success',
             'nombre' => $info[0]['cn'][0],
             'correo' => $info[0]['mail'][0] ?? 'Sin correo',
-            'departamento' => ($info[0]['department'][0] ?? 'N/A') . ' - ' . ($info[0]['title'][0] ?? '')
+            'departamento' => ($info[0]['department'][0] ?? '') . ' - ' . ($info[0]['title'][0] ?? '')
         ]);
     } else {
         echo json_encode(['status' => 'not_found']);
     }
 } else {
-    echo json_encode(['status' => 'error', 'msg' => 'Fallo al autenticar en AD']);
+    echo json_encode(['status' => 'error', 'msg' => 'Credenciales de servicio incorrectas']);
 }
-ldap_unbind($ldap_conn);
+ldap_close($ds);
 ?>
