@@ -1,12 +1,14 @@
 <?php
-// core/validar_usuario_ldap.php
-require_once 'config_ldap.php';
+// public/api_ldap.php
+require_once '../core/config_ldap.php'; // Subimos un nivel para buscar la config
 header('Content-Type: application/json');
 
 $usuario = isset($_GET['usuario']) ? trim($_GET['usuario']) : '';
 if (empty($usuario)) { echo json_encode(['status' => 'error']); exit; }
 
 $ldap_conn = ldap_connect(LDAP_HOST, LDAP_PORT);
+if (!$ldap_conn) { echo json_encode(['status' => 'error', 'msg' => 'No conecta']); exit; }
+
 ldap_set_option($ldap_conn, LDAP_OPT_PROTOCOL_VERSION, 3);
 ldap_set_option($ldap_conn, LDAP_OPT_REFERRALS, 0);
 
@@ -26,5 +28,7 @@ if ($bind) {
     } else {
         echo json_encode(['status' => 'not_found']);
     }
+} else {
+    echo json_encode(['status' => 'error', 'msg' => 'Bind failed']);
 }
 ldap_unbind($ldap_conn);
