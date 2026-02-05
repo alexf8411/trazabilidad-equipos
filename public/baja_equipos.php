@@ -42,54 +42,50 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['seriales_raw'])) {
             $lugar_defecto = $stmt_lugar->fetch(PDO::FETCH_ASSOC);
 
             foreach ($lista_seriales as $serial) {
-                $serial = strtoupper($serial);
+                $serial = strtoupper($serial); // Estandarizar
                 
                 try {
                     $pdo->beginTransaction();
 
-                    // A. Verificar existencia
+                    // A. Verificar existencia y estado actual
                     $stmt_check = $pdo->prepare("SELECT estado_maestro, placa_ur FROM equipos WHERE serial = ?");
                     $stmt_check->execute([$serial]);
                     $equipo = $stmt_check->fetch();
-
-                    if (!$equipo) throw new Exception("Serial no encontrado en BD.");
-                    if ($equipo['estado_maestro'] === 'Baja') throw new Exception("El equipo ya estaba dado de Baja.");
+                    if (!$equipo) {
+                        throw new Exception("Serial no encontrado en BD.");
+                    }
+                    if ($equipo['estado_maestro'] === 'Baja') {
+                        throw new Exception("El equipo ya estaba dado de Baja anteriormente.");
+                    }
 
                     // B. Actualizar Estado Maestro
                     $stmt_upd = $pdo->prepare("UPDATE equipos SET estado_maestro = 'Baja' WHERE serial = ?");
                     $stmt_upd->execute([$serial]);
 
-                    // C. Insertar en Bitácora (CORREGIDO: 8 columnas = 8 valores)
+                    // C. Insertar en Bitácora (Evento 'Baja')
                     $sql_bit = "INSERT INTO bitacora (
-                                    serial_equipo, 
-                                    id_lugar, 
-                                    sede, 
-                                    ubicacion, 
-                                    tipo_evento, 
-                                    correo_responsable, 
-                                    tecnico_responsable, 
-                                    hostname
-                                ) VALUES (?, ?, ?, ?, 'Baja', ?, ?, 'BAJA-DEFINITIVA')";
-                    
+                                    serial_equipo, id_lugar, sede, ubicacion,
+                                    tipo_evento, correo_responsable, tecnico_responsable,
+                                    hostname, fecha_evento
+                                ) VALUES (?, ?, ?, ?, 'Baja', ?, ?, 'BAJA-DEFINITIVA', NOW())";
+
                     $stmt_b = $pdo->prepare($sql_bit);
                     $stmt_b->execute([
-                        $serial,                     // 1. serial_equipo
-                        $lugar_defecto['id'],        // 2. id_lugar
-                        $lugar_defecto['sede'],      // 3. sede
-                        'Disposición Final / Residuos', // 4. ubicacion
-                        $motivo,                     // 5. correo_responsable (usamos el motivo aquí para que quede en el reporte)
-                        $tecnico,                    // 6. tecnico_responsable
-                        'BAJA-SISTEMA'               // 7. hostname
+                        $serial,
+                        $lugar_defecto['id'],
+                        $lugar_defecto['sede'],
+                        'Disposición Final / Residuos', // Ubicación lógica
+                        'Activos Fijos (Bajas)',        // Responsable lógico
+                        $tecnico
                     ]);
-                    // Nota: Quitamos fecha_evento de la consulta porque la DB lo pone solo (CURRENT_TIMESTAMP)
 
                     $pdo->commit();
-                    $results[] = ['serial' => $serial, 'status' => 'ok', 'msg' => "Baja OK (Placa: {$equipo['placa_ur']})"];
+                    $results[] = ['serial' => $serial, 'status' => 'ok', 'msg' => "Baja exitosa (Placa: {$equipo['placa_ur']})"];
 
                 } catch (Exception $e) {
                     if ($pdo->inTransaction()) $pdo->rollBack();
                     $results[] = ['serial' => $serial, 'status' => 'error', 'msg' => $e->getMessage()];
-                }
+            }
             }
         }
     } else {
