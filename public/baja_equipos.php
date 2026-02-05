@@ -47,7 +47,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['seriales_raw'])) {
                 try {
                     $pdo->beginTransaction();
 
-                    // A. Verificar
+                    // A. Verificar existencia
                     $stmt_check = $pdo->prepare("SELECT estado_maestro, placa_ur FROM equipos WHERE serial = ?");
                     $stmt_check->execute([$serial]);
                     $equipo = $stmt_check->fetch();
@@ -55,28 +55,33 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['seriales_raw'])) {
                     if (!$equipo) throw new Exception("Serial no encontrado en BD.");
                     if ($equipo['estado_maestro'] === 'Baja') throw new Exception("El equipo ya estaba dado de Baja.");
 
-                    // B. Actualizar
+                    // B. Actualizar Estado Maestro
                     $stmt_upd = $pdo->prepare("UPDATE equipos SET estado_maestro = 'Baja' WHERE serial = ?");
                     $stmt_upd->execute([$serial]);
 
-                    // C. Bitácora
+                    // C. Insertar en Bitácora (CORREGIDO: 8 columnas = 8 valores)
                     $sql_bit = "INSERT INTO bitacora (
-                                    serial_equipo, id_lugar, sede, ubicacion, 
-                                    tipo_evento, correo_responsable, tecnico_responsable, 
-                                    hostname, fecha_evento
-                                ) VALUES (?, ?, ?, ?, 'Baja', ?, ?, 'BAJA-DEFINITIVA', NOW())";
+                                    serial_equipo, 
+                                    id_lugar, 
+                                    sede, 
+                                    ubicacion, 
+                                    tipo_evento, 
+                                    correo_responsable, 
+                                    tecnico_responsable, 
+                                    hostname
+                                ) VALUES (?, ?, ?, ?, 'Baja', ?, ?, 'BAJA-DEFINITIVA')";
                     
                     $stmt_b = $pdo->prepare($sql_bit);
                     $stmt_b->execute([
-                        $serial, $lugar_defecto['id'], $lugar_defecto['sede'], 
-                        'Disposición Final / Residuos', 
-                        $motivo, // Guardamos el motivo en el responsable lógico o creamos campo nuevo. 
-                                 // NOTA: Aquí antes decía 'Activos Fijos'. Si quieres ver el motivo en el reporte, 
-                                 // puedes concatenarlo o usarlo como 'correo_responsable' para que salga en el PDF.
-                                 // Por ahora lo dejo como 'Activos Fijos' para mantener estándar.
-                        'Activos Fijos (Bajas)', 
-                        $tecnico
+                        $serial,                     // 1. serial_equipo
+                        $lugar_defecto['id'],        // 2. id_lugar
+                        $lugar_defecto['sede'],      // 3. sede
+                        'Disposición Final / Residuos', // 4. ubicacion
+                        $motivo,                     // 5. correo_responsable (usamos el motivo aquí para que quede en el reporte)
+                        $tecnico,                    // 6. tecnico_responsable
+                        'BAJA-SISTEMA'               // 7. hostname
                     ]);
+                    // Nota: Quitamos fecha_evento de la consulta porque la DB lo pone solo (CURRENT_TIMESTAMP)
 
                     $pdo->commit();
                     $results[] = ['serial' => $serial, 'status' => 'ok', 'msg' => "Baja OK (Placa: {$equipo['placa_ur']})"];
