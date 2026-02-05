@@ -153,6 +153,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirmar'])) {
                     <label class="label-sm">Tipo de Movimiento</label>
                     <select name="tipo_evento">
                         <option value="Asignación">Asignación (Entrega)</option>
+                        <!--<option value="Traslado">Traslado (Cambio de Sede)</option> Aqui irian mas estados-->
                         <option value="Devolución">Devolución a Bodega</option>
                     </select>
                 </div>
