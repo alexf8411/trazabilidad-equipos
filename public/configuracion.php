@@ -1,8 +1,8 @@
 <?php
 /**
  * public/configuracion.php
- * Módulo de Configuración del Sistema (Solo Administradores)
- * Permite rotar credenciales y textos legales sin tocar código.
+ * V2 - BLINDADO
+ * Módulo de Configuración con Protección de Sintaxis
  */
 require_once '../core/session.php';
 
@@ -23,37 +23,53 @@ $files = [
 // 2. PROCESAR GUARDADO
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     try {
-        // A. ACTUALIZAR CORREO (Define Constants)
+        // --- FUNCIÓN DE SEGURIDAD ---
+        // Escapa comillas simples (') para que no rompan el PHP
+        function s($input) {
+            return addslashes($input);
+        }
+
+        // A. ACTUALIZAR CORREO
         $content = file_get_contents($files['mail']);
-        $content = preg_replace("/define\('SMTP_USER',\s*'([^']*)'\);/", "define('SMTP_USER', '{$_POST['smtp_user']}');", $content);
-        $content = preg_replace("/define\('SMTP_PASS',\s*'([^']*)'\);/", "define('SMTP_PASS', '{$_POST['smtp_pass']}');", $content);
-        file_put_contents($files['mail'], $content);
+        // Guardamos copia de seguridad en memoria por si el regex falla
+        $backup = $content;
+        
+        $content = preg_replace("/define\('SMTP_USER',\s*'([^']*)'\);/", "define('SMTP_USER', '" . s($_POST['smtp_user']) . "');", $content);
+        $content = preg_replace("/define\('SMTP_PASS',\s*'([^']*)'\);/", "define('SMTP_PASS', '" . s($_POST['smtp_pass']) . "');", $content);
+        
+        if($content !== null) file_put_contents($files['mail'], $content);
 
-        // B. ACTUALIZAR LDAP (Define Constants)
+        // B. ACTUALIZAR LDAP
         $content = file_get_contents($files['ldap']);
-        $content = preg_replace("/define\('LDAP_BIND_USER',\s*'([^']*)'\);/", "define('LDAP_BIND_USER', '{$_POST['ldap_user']}');", $content);
-        $content = preg_replace("/define\('LDAP_BIND_PASS',\s*'([^']*)'\);/", "define('LDAP_BIND_PASS', '{$_POST['ldap_pass']}');", $content);
-        file_put_contents($files['ldap'], $content);
+        $content = preg_replace("/define\('LDAP_BIND_USER',\s*'([^']*)'\);/", "define('LDAP_BIND_USER', '" . s($_POST['ldap_user']) . "');", $content);
+        $content = preg_replace("/define\('LDAP_BIND_PASS',\s*'([^']*)'\);/", "define('LDAP_BIND_PASS', '" . s($_POST['ldap_pass']) . "');", $content);
+        
+        if($content !== null) file_put_contents($files['ldap'], $content);
 
-        // C. ACTUALIZAR DB (Variables)
-        // ¡CUIDADO! Actualizar credenciales de DB es riesgoso.
+        // C. ACTUALIZAR DB
         $content = file_get_contents($files['db']);
-        $content = preg_replace("/\\\$user\s*=\s*'([^']*)';/", "\$user = '{$_POST['db_user']}';", $content);
-        $content = preg_replace("/\\\$pass\s*=\s*'([^']*)';/", "\$pass = '{$_POST['db_pass']}';", $content);
-        file_put_contents($files['db'], $content);
+        $content = preg_replace("/\\\$user\s*=\s*'([^']*)';/", "\$user = '" . s($_POST['db_user']) . "';", $content);
+        $content = preg_replace("/\\\$pass\s*=\s*'([^']*)';/", "\$pass = '" . s($_POST['db_pass']) . "';", $content);
+        
+        if($content !== null) file_put_contents($files['db'], $content);
 
-        // D. ACTUALIZAR TEXTO LEGAL
+        // D. ACTUALIZAR TEXTO LEGAL (Este no es código PHP, no requiere addslashes)
         file_put_contents($files['txt'], $_POST['texto_legal']);
 
-        $msg = "<div class='alert success'>✅ Configuración actualizada correctamente.</div>";
+        $msg = "<div class='alert success'>✅ Configuración guardada y protegida.</div>";
 
     } catch (Exception $e) {
-        $msg = "<div class='alert error'>❌ Error al escribir archivos. Verifique permisos (chmod).</div>";
+        $msg = "<div class='alert error'>❌ Error al escribir archivos.</div>";
     }
 }
 
-// 3. LEER VALORES ACTUALES (Usando Regex para no ejecutar los archivos)
+// 3. LEER VALORES (Usamos stripslashes para mostrar el dato limpio en el input)
 $vals = [];
+
+// Función para limpiar la visualización
+function clean($str) {
+    return htmlspecialchars(stripslashes($str));
+}
 
 // Mail
 $c_mail = file_get_contents($files['mail']);
@@ -72,7 +88,6 @@ preg_match("/\\\$pass\s*=\s*'([^']*)';/", $c_db, $m); $vals['db_pass'] = $m[1] ?
 
 // Texto
 $vals['texto'] = file_get_contents($files['txt']);
-
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -122,11 +137,11 @@ $vals['texto'] = file_get_contents($files['txt']);
             <div class="form-grid">
                 <div>
                     <label>Usuario / Cuenta de Servicio</label>
-                    <input type="text" name="smtp_user" value="<?= htmlspecialchars($vals['smtp_user']) ?>" required>
+                    <input type="text" name="smtp_user" value="<?= clean($vals['smtp_user']) ?>" required>
                 </div>
                 <div>
                     <label>Contraseña / App Password</label>
-                    <input type="password" name="smtp_pass" value="<?= htmlspecialchars($vals['smtp_pass']) ?>" required>
+                    <input type="password" name="smtp_pass" value="<?= clean($vals['smtp_pass']) ?>" required>
                 </div>
             </div>
 
@@ -135,11 +150,11 @@ $vals['texto'] = file_get_contents($files['txt']);
             <div class="form-grid">
                 <div>
                     <label>Bind User (Principal Name)</label>
-                    <input type="text" name="ldap_user" value="<?= htmlspecialchars($vals['ldap_user']) ?>" required>
+                    <input type="text" name="ldap_user" value="<?= clean($vals['ldap_user']) ?>" required>
                 </div>
                 <div>
                     <label>Bind Password</label>
-                    <input type="password" name="ldap_pass" value="<?= htmlspecialchars($vals['ldap_pass']) ?>" required>
+                    <input type="password" name="ldap_pass" value="<?= clean($vals['ldap_pass']) ?>" required>
                 </div>
             </div>
 
@@ -150,11 +165,11 @@ $vals['texto'] = file_get_contents($files['txt']);
             <div class="form-grid">
                 <div>
                     <label>Usuario BD</label>
-                    <input type="text" name="db_user" value="<?= htmlspecialchars($vals['db_user']) ?>" required>
+                    <input type="text" name="db_user" value="<?= clean($vals['db_user']) ?>" required>
                 </div>
                 <div>
                     <label>Contraseña BD</label>
-                    <input type="password" name="db_pass" value="<?= htmlspecialchars($vals['db_pass']) ?>" required>
+                    <input type="password" name="db_pass" value="<?= clean($vals['db_pass']) ?>" required>
                 </div>
             </div>
 
