@@ -100,6 +100,11 @@ $rol = $_SESSION['rol']; // Atajo para escribir menos código
                 <h3>➕ Alta de Equipos</h3>
                 <p>Registro de nuevos activos (Hoja de Vida) e ingreso a Bodega.</p>
             </a>
+
+            <a href="baja_equipos.php" class="action-card card-input" style="border-top-color: #dc3545;">
+                <h3 style="color: #dc3545;">🗑️ Control de Bajas</h3>
+                <p>Retiro definitivo de activos por obsolescencia o daño (Por Serial).</p>
+            </a>
         <?php endif; ?>
 
         <?php if (in_array($rol, ['Administrador', 'Recursos', 'Soporte'])): ?>
