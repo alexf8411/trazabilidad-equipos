@@ -16,7 +16,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['seriales_raw'])) {
     $motivo = trim($_POST['motivo']);
     $tecnico = $_SESSION['nombre'];
     // Convertimos el texto en un array, separando por enter
-    // Esto permite pegar una columna de Excel directamente
+    // Esto permite pegar una columna de Excel directamente maximo 100 equipos
     $raw_data = $_POST['seriales_raw'];
     $lista_seriales = preg_split('/\r\n|\r|\n/', $raw_data);
     $lista_seriales = array_filter(array_map('trim', $lista_seriales)); // Limpiar vacíos
