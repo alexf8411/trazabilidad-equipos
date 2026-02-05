@@ -2,23 +2,27 @@
 /**
  * public/generar_acta.php
  * Generación de Acta PDF y Envío de Correo (Escenario B: Verificación Previa)
+ * CORREGIDO: Importación de FPDF y columna id_evento
  */
 require_once '../core/db.php';
 require_once '../core/session.php';
 require_once '../core/config_mail.php';
-require_once '../vendor/autoload.php'; // Carga automática de Composer
+require_once '../vendor/autoload.php'; 
 
+// IMPORTANTE: Estas líneas permiten usar las librerías instaladas
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
+use FPDF; // <--- ESTA LÍNEA SOLUCIONA EL ERROR 500
 
 // 1. VALIDACIÓN BÁSICA
 if (!isset($_GET['serial'])) {
-    die("<div style='color:red; text-align:center; margin-top:50px;'>Error: No se especificó un serial.</div>");
+    die("<div style='color:red; text-align:center; margin-top:50px; font-family:sans-serif;'>Error: No se especificó un serial para generar el acta.</div>");
 }
 $serial = $_GET['serial'];
-$action = $_GET['action'] ?? 'view'; // 'view' para ver PDF, 'send_mail' para enviar
+$action = $_GET['action'] ?? 'view';
 
-// 2. OBTENER DATOS (JOIN con la tabla 'equipos' confirmada y último evento)
+// 2. OBTENER DATOS 
+// Corrección SQL: Usamos 'b.id_evento' porque 'b.id' no existe en tu tabla bitacora
 $sql = "SELECT e.*, b.*, l.nombre as nombre_lugar 
         FROM equipos e
         JOIN bitacora b ON e.serial = b.serial_equipo
@@ -31,13 +35,16 @@ $stmt->execute([$serial]);
 $data = $stmt->fetch(PDO::FETCH_ASSOC);
 
 if (!$data) {
-    die("<div style='color:red; text-align:center; margin-top:50px;'>Error: No existen movimientos recientes para el equipo $serial.</div>");
+    die("<div style='color:red; text-align:center; margin-top:50px; font-family:sans-serif;'>
+            Error: No existen movimientos en la bitácora para el equipo <b>$serial</b>.<br>
+            Asegúrese de haber registrado el movimiento primero.
+         </div>");
 }
 
 // 3. CLASE PDF (FPDF)
 class PDF extends FPDF {
     function Header() {
-        if(file_exists('img/logo_ur.png')) { // Ruta relativa desde public/
+        if(file_exists('img/logo_ur.png')) { 
             $this->Image('img/logo_ur.png', 10, 8, 33);
         }
         $this->SetFont('Arial', 'B', 14);
@@ -51,7 +58,7 @@ class PDF extends FPDF {
     }
 }
 
-// 4. FUNCIÓN PARA CONSTRUIR EL PDF (Para no repetir código)
+// 4. FUNCIÓN CONSTRUCTORA DEL PDF
 function construirPDF($data) {
     $pdf = new PDF();
     $pdf->AddPage();
@@ -59,6 +66,7 @@ function construirPDF($data) {
 
     // Bloque 1: Datos del Evento
     $pdf->SetFillColor(230, 240, 255);
+    // Usamos id_evento aquí también
     $pdf->Cell(0, 8, utf8_decode('DETALLES DE LA TRANSACCIÓN #') . $data['id_evento'], 1, 1, 'L', true);
     
     $pdf->SetFont('Arial', 'B', 10);
@@ -133,10 +141,10 @@ function construirPDF($data) {
     return $pdf;
 }
 
-// 5. LÓGICA DE ENVÍO DE CORREO (Solo se ejecuta si action=send_mail)
+// 5. LÓGICA DE ENVÍO DE CORREO
 if ($action == 'send_mail') {
     $pdf = construirPDF($data);
-    $pdfContent = $pdf->Output('S'); // Obtener binario del PDF
+    $pdfContent = $pdf->Output('S'); // Binario del PDF
 
     $mail = new PHPMailer(true);
     try {
@@ -161,18 +169,18 @@ if ($action == 'send_mail') {
                          'Atentamente,<br>Dirección de Tecnología - UR';
 
         $mail->send();
-        echo "OK"; // Respuesta para AJAX
+        echo "OK"; 
     } catch (Exception $e) {
         http_response_code(500);
         echo "Error Mailer: {$mail->ErrorInfo}";
     }
-    exit; // Terminar ejecución aquí para no generar HTML extra
+    exit;
 }
 
-// 6. VISTA HTML (Visualizador de PDF + Botón)
+// 6. VISTA HTML
 if ($action == 'view') {
-    // Generamos el PDF temporalmente en base64 para mostrarlo en el iframe sin guardarlo en disco
     $pdf = construirPDF($data);
+    // Codificamos en base64 para mostrar sin guardar archivo físico
     $pdfBase64 = base64_encode($pdf->Output('S'));
 ?>
 <!DOCTYPE html>
@@ -229,16 +237,17 @@ if ($action == 'view') {
                         msg.innerHTML = 'Notificación enviada exitosamente.';
                         msg.style.color = '#4ade80';
                     } else {
-                        throw new Error('Error en el envío');
+                        return response.text().then(text => { throw new Error(text) });
                     }
                 })
                 .catch(error => {
                     btn.disabled = false;
                     btn.innerHTML = '❌ Reintentar';
                     btn.style.background = '#ef4444';
-                    msg.innerHTML = 'Error al conectar con Office 365.';
+                    msg.innerHTML = 'Error de envío. Ver consola.';
                     msg.style.color = '#fca5a5';
                     console.error(error);
+                    alert("Error detallado: " + error.message);
                 });
         }
     </script>
