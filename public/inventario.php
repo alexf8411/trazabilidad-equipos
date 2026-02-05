@@ -1,26 +1,34 @@
 <?php
 /**
  * public/inventario.php
- * Inventario General con Paginación y Búsqueda
- * Optimizado para alto volumen de datos (4,500+ registros)
+ * Inventario General con Opción de Reversión para Admin
  */
 require_once '../core/db.php';
 require_once '../core/session.php';
 
-// 1. SEGURIDAD: Solo usuarios autenticados
+// 1. SEGURIDAD
 if (!isset($_SESSION['logged_in'])) {
     header("Location: login.php");
     exit;
 }
 
-// 2. --- NUEVO: DETECTOR DE MENSAJES DEL SISTEMA ---
+// 2. DETECTOR DE MENSAJES DEL SISTEMA
 $mensaje_sistema = "";
 if (isset($_GET['status'])) {
+    $placa_msg = htmlspecialchars($_GET['p'] ?? 'Equipo');
+    
     if ($_GET['status'] == 'updated') {
-        $placa_msg = htmlspecialchars($_GET['p'] ?? 'Equipo');
         $mensaje_sistema = "
-        <div style='background:#d4edda; color:#155724; padding:15px; border-radius:5px; margin: 0 auto 20px auto; max-width: 1350px; border-left:5px solid #28a745; box-shadow: 0 2px 5px rgba(0,0,0,0.1); font-family: sans-serif;'>
-            ✅ <strong>Cambios Guardados:</strong> La información del equipo <u>$placa_msg</u> se actualizó y se registró en la auditoría.
+        <div style='background:#d4edda; color:#155724; padding:15px; border-radius:5px; margin-bottom:20px; border-left:5px solid #28a745;'>
+            ✅ <strong>Guardado:</strong> Datos actualizados para <u>$placa_msg</u>.
+        </div>";
+    }
+    // NUEVO MENSAJE PARA LA REVERSIÓN
+    if ($_GET['status'] == 'reverted') {
+        $mensaje_sistema = "
+        <div style='background:#fff3cd; color:#856404; padding:15px; border-radius:5px; margin-bottom:20px; border-left:5px solid #ffc107;'>
+            ♻️ <strong>Baja Revertida:</strong> El equipo <u>$placa_msg</u> ha sido restaurado a 'Alta' y movido a Bodega. 
+            <br><small>Esta acción ha quedado registrada en la Auditoría Forense.</small>
         </div>";
     }
 }
@@ -50,7 +58,7 @@ if ($busqueda != '') {
 }
 
 try {
-    // 1. Contar total de resultados
+    // 1. Contar total
     $sql_count = "SELECT COUNT(*) FROM equipos e 
                   LEFT JOIN (
                       SELECT b1.serial_equipo, b1.correo_responsable 
@@ -65,7 +73,7 @@ try {
     $total_registros = $stmt_count->fetchColumn();
     $total_paginas = ceil($total_registros / $registros_por_pagina);
 
-    // 2. Obtener datos con JOIN a la última ubicación conocida
+    // 2. Obtener datos
     $sql_data = "SELECT e.*, b.sede, b.ubicacion, b.tipo_evento, b.correo_responsable, b.hostname
                  FROM equipos e
                  LEFT JOIN (
@@ -85,7 +93,7 @@ try {
     $equipos = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 } catch (PDOException $e) {
-    die("Error crítico de base de datos. Contacte al administrador.");
+    die("Error crítico de base de datos.");
 }
 ?>
 
@@ -95,7 +103,6 @@ try {
     <meta charset="UTF-8">
     <title>Inventario General - URTRACK</title>
     <style>
-        /* ... (Tus estilos se mantienen igual) ... */
         :root { --primary: #002D72; --secondary: #e7f1ff; --text: #333; --border: #e1e4e8; --bg: #f8f9fa; }
         body { font-family: 'Segoe UI', system-ui, sans-serif; background-color: var(--bg); color: var(--text); padding: 20px; margin: 0; }
         .layout-container { max-width: 1400px; margin: 0 auto; background: white; padding: 25px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
@@ -112,13 +119,23 @@ try {
         tbody tr:hover { background-color: var(--secondary); }
         td { padding: 10px 15px; vertical-align: middle; }
         .badge-modalidad { background: #eee; color: #555; border: 1px solid #ddd; padding: 4px 8px; border-radius: 4px; font-size: 0.75rem; }
-        .status-alta { color: #28a745; font-weight: bold; }
-        .status-baja { color: #dc3545; font-weight: bold; }
+        
+        /* Estilos de Estado */
+        .status-alta { color: #28a745; font-weight: bold; background: #d4edda; padding: 2px 8px; border-radius: 12px; font-size: 0.8rem; }
+        .status-baja { color: #dc3545; font-weight: bold; background: #f8d7da; padding: 2px 8px; border-radius: 12px; font-size: 0.8rem; }
+
         .pagination { display: flex; justify-content: center; margin-top: 30px; gap: 5px; }
         .page-link { padding: 8px 12px; border: 1px solid var(--border); text-decoration: none; color: var(--primary); border-radius: 4px; }
         .page-link.active { background: var(--primary); color: white; }
-        .btn-icon { text-decoration: none; font-size: 1.1rem; padding: 5px; }
-        .empty-state { text-align: center; padding: 40px; color: #777; font-style: italic; }
+        
+        .btn-icon { text-decoration: none; font-size: 1.1rem; padding: 5px; display: inline-block; }
+        
+        /* Botón Revertir Exclusivo */
+        .btn-revert { 
+            color: #fff; background: #6c757d; font-size: 0.75rem; padding: 3px 8px; 
+            border-radius: 4px; text-decoration: none; margin-left: 5px; vertical-align: middle;
+        }
+        .btn-revert:hover { background: #5a6268; }
     </style>
 </head>
 <body>
@@ -131,8 +148,8 @@ try {
         <div>
             <h1 class="page-title">📦 Inventario General</h1>
             <small style="color: #666; margin-left: 20px;">
-                Mostrando página <strong><?= $pagina_actual ?></strong> de <strong><?= $total_paginas ?></strong> 
-                (Total: <?= number_format($total_registros) ?> registros)
+                Pag <strong><?= $pagina_actual ?></strong> de <strong><?= $total_paginas ?></strong> 
+                (Total: <?= number_format($total_registros) ?>)
             </small>
         </div>
 
@@ -164,7 +181,7 @@ try {
             <tbody>
                 <?php if (count($equipos) > 0): ?>
                     <?php foreach ($equipos as $eq): ?>
-                    <tr>
+                    <tr style="<?= $eq['estado_maestro'] == 'Baja' ? 'opacity: 0.7; background: #fff5f5;' : '' ?>">
                         <td style="font-weight: bold; color: var(--primary);"><?= htmlspecialchars($eq['placa_ur']) ?></td>
                         <td>
                             <div><?= htmlspecialchars($eq['serial']) ?></div>
@@ -186,11 +203,27 @@ try {
                             <?php endif; ?>
                         </td>
                         <td><div style="font-size:0.9rem;"><?= htmlspecialchars($eq['correo_responsable'] ?? 'N/A') ?></div></td>
-                        <td><span class="<?= $eq['estado_maestro'] == 'Alta' ? 'status-alta' : 'status-baja' ?>"><?= $eq['estado_maestro'] ?></span></td>
+                        
+                        <td>
+                            <span class="<?= $eq['estado_maestro'] == 'Alta' ? 'status-alta' : 'status-baja' ?>">
+                                <?= $eq['estado_maestro'] ?>
+                            </span>
+                        </td>
+                        
                         <td style="text-align: center; white-space: nowrap;">
                             <a href="historial.php?serial=<?= $eq['serial'] ?>" class="btn-icon" title="Ver Trazabilidad">👁️</a>
+                            
                             <?php if (in_array($_SESSION['rol'], ['Administrador', 'Recursos'])): ?>
                                 <a href="editar_equipo.php?id=<?= $eq['id_equipo'] ?>" class="btn-icon" title="Editar" style="color: #d39e00;">✏️</a>
+                            <?php endif; ?>
+
+                            <?php if ($_SESSION['rol'] === 'Administrador' && $eq['estado_maestro'] === 'Baja'): ?>
+                                <a href="revertir_baja.php?serial=<?= $eq['serial'] ?>" 
+                                   class="btn-revert" 
+                                   title="Restaurar a estado Activo"
+                                   onclick="return confirm('⚠️ ¿Está seguro de revertir la BAJA de este equipo?\n\nEsta acción quedará registrada en la Auditoría Forense.');">
+                                   ♻️ Revertir
+                                </a>
                             <?php endif; ?>
                         </td>
                     </tr>
