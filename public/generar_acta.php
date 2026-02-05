@@ -1,143 +1,247 @@
 <?php
 /**
  * public/generar_acta.php
- * Generación de Acta con trazabilidad estricta para Auditoría
+ * Generación de Acta PDF y Envío de Correo (Escenario B: Verificación Previa)
  */
 require_once '../core/db.php';
 require_once '../core/session.php';
-require_once '../core/config_ldap.php';
-require_once '../vendor/autoload.php'; 
+require_once '../core/config_mail.php';
+require_once '../vendor/autoload.php'; // Carga automática de Composer
 
-use Dompdf\Dompdf;
-use Dompdf\Options;
+use PHPMailer\PHPMailer\PHPMailer;
+use PHPMailer\PHPMailer\Exception;
 
-// 1. CAPTURA DE SERIAL Y VALIDACIÓN DE SESIÓN
-$serial = $_GET['serial'] ?? '';
-if (empty($serial)) die("Acceso denegado: Serial ausente.");
+// 1. VALIDACIÓN BÁSICA
+if (!isset($_GET['serial'])) {
+    die("<div style='color:red; text-align:center; margin-top:50px;'>Error: No se especificó un serial.</div>");
+}
+$serial = $_GET['serial'];
+$action = $_GET['action'] ?? 'view'; // 'view' para ver PDF, 'send_mail' para enviar
 
-// 2. CONSULTA SQL CRUZADA (EQUIPO + ÚLTIMO MOVIMIENTO REGISTRADO)
-// Buscamos el correo real que el técnico ingresó en el formulario de movimiento
-$sql = "SELECT e.marca, e.modelo, e.placa_ur, e.serial,
-               b.sede, b.ubicacion, b.correo_responsable, b.hostname, 
-               b.fecha_evento, b.tecnico_responsable 
-        FROM equipos e 
-        JOIN bitacora b ON e.serial = b.serial_equipo 
+// 2. OBTENER DATOS (JOIN con la tabla 'equipos' confirmada y último evento)
+$sql = "SELECT e.*, b.*, l.nombre as nombre_lugar 
+        FROM equipos e
+        JOIN bitacora b ON e.serial = b.serial_equipo
+        LEFT JOIN lugares l ON b.id_lugar = l.id
         WHERE e.serial = ? 
-        ORDER BY b.id DESC LIMIT 1";
+        ORDER BY b.id_evento DESC LIMIT 1";
 
 $stmt = $pdo->prepare($sql);
 $stmt->execute([$serial]);
-$movimiento = $stmt->fetch(PDO::FETCH_ASSOC);
+$data = $stmt->fetch(PDO::FETCH_ASSOC);
 
-if (!$movimiento) {
-    die("Error de Auditoría: No existe un registro de movimiento para este serial.");
+if (!$data) {
+    die("<div style='color:red; text-align:center; margin-top:50px;'>Error: No existen movimientos recientes para el equipo $serial.</div>");
 }
 
-// 3. VALIDACIÓN LDAP PARA IDENTIDAD LEGAL
-$nombre_legal = "No recuperado de LDAP";
-$cargo_departamento = "No recuperado de LDAP";
-
-$ldap_conn = ldap_connect(LDAP_HOST, LDAP_PORT);
-if ($ldap_conn) {
-    ldap_set_option($ldap_conn, LDAP_OPT_PROTOCOL_VERSION, 3);
-    ldap_set_option($ldap_conn, LDAP_OPT_REFERRALS, 0);
-    
-    // Bind con cuenta de sistema para búsqueda
-    $bind = @ldap_bind($ldap_conn, LDAP_ADMIN_USER, LDAP_ADMIN_PASS);
-    
-    if ($bind) {
-        // Buscamos por el CORREO REAL que quedó guardado en la base de datos
-        $filtro = "(mail=" . $movimiento['correo_responsable'] . ")";
-        $busqueda = ldap_search($ldap_conn, LDAP_DN, $filtro, ['cn', 'department', 'title']);
-        $info = ldap_get_entries($ldap_conn, $busqueda);
-        
-        if ($info['count'] > 0) {
-            $nombre_legal = $info[0]['cn'][0];
-            $cargo_departamento = ($info[0]['department'][0] ?? 'N/A') . " / " . ($info[0]['title'][0] ?? 'N/A');
+// 3. CLASE PDF (FPDF)
+class PDF extends FPDF {
+    function Header() {
+        if(file_exists('img/logo_ur.png')) { // Ruta relativa desde public/
+            $this->Image('img/logo_ur.png', 10, 8, 33);
         }
+        $this->SetFont('Arial', 'B', 14);
+        $this->Cell(0, 10, 'ACTA DE MOVIMIENTO DE ACTIVO', 0, 0, 'C');
+        $this->Ln(20);
     }
-    ldap_unbind($ldap_conn);
+    function Footer() {
+        $this->SetY(-15);
+        $this->SetFont('Arial', 'I', 8);
+        $this->Cell(0, 10, utf8_decode('Generado por URTRACK - Universidad del Rosario - Página ') . $this->PageNo(), 0, 0, 'C');
+    }
 }
 
-// 4. ESTRUCTURA DEL DOCUMENTO PARA ARCHIVO FÍSICO/DIGITAL
-$html = '
+// 4. FUNCIÓN PARA CONSTRUIR EL PDF (Para no repetir código)
+function construirPDF($data) {
+    $pdf = new PDF();
+    $pdf->AddPage();
+    $pdf->SetFont('Arial', '', 11);
+
+    // Bloque 1: Datos del Evento
+    $pdf->SetFillColor(230, 240, 255);
+    $pdf->Cell(0, 8, utf8_decode('DETALLES DE LA TRANSACCIÓN #') . $data['id_evento'], 1, 1, 'L', true);
+    
+    $pdf->SetFont('Arial', 'B', 10);
+    $pdf->Cell(35, 8, 'Fecha:', 1);
+    $pdf->SetFont('Arial', '', 10);
+    $pdf->Cell(60, 8, $data['fecha_evento'], 1);
+    $pdf->SetFont('Arial', 'B', 10);
+    $pdf->Cell(35, 8, 'Tipo Evento:', 1);
+    $pdf->SetFont('Arial', '', 10);
+    $pdf->Cell(60, 8, strtoupper(utf8_decode($data['tipo_evento'])), 1, 1);
+
+    $pdf->SetFont('Arial', 'B', 10);
+    $pdf->Cell(35, 8, 'Sede:', 1);
+    $pdf->SetFont('Arial', '', 10);
+    $pdf->Cell(60, 8, utf8_decode($data['sede']), 1);
+    $pdf->SetFont('Arial', 'B', 10);
+    $pdf->Cell(35, 8, utf8_decode('Ubicación:'), 1);
+    $pdf->SetFont('Arial', '', 10);
+    $pdf->Cell(60, 8, utf8_decode($data['ubicacion']), 1, 1);
+    $pdf->Ln(5);
+
+    // Bloque 2: Datos del Equipo
+    $pdf->SetFont('Arial', '', 11);
+    $pdf->Cell(0, 8, utf8_decode('INFORMACIÓN DEL ACTIVO'), 1, 1, 'L', true);
+    
+    $pdf->SetFont('Arial', 'B', 10);
+    $pdf->Cell(35, 8, 'Placa UR:', 1);
+    $pdf->SetFont('Arial', '', 10);
+    $pdf->Cell(60, 8, $data['placa_ur'], 1);
+    $pdf->SetFont('Arial', 'B', 10);
+    $pdf->Cell(35, 8, 'Serial:', 1);
+    $pdf->SetFont('Arial', '', 10);
+    $pdf->Cell(60, 8, $data['serial'], 1, 1);
+
+    $pdf->SetFont('Arial', 'B', 10);
+    $pdf->Cell(35, 8, 'Marca/Modelo:', 1);
+    $pdf->SetFont('Arial', '', 10);
+    $pdf->Cell(155, 8, utf8_decode($data['marca'] . ' ' . $data['modelo']), 1, 1);
+    
+    $pdf->SetFont('Arial', 'B', 10);
+    $pdf->Cell(35, 8, 'Hostname:', 1);
+    $pdf->SetFont('Arial', '', 10);
+    $pdf->Cell(155, 8, $data['hostname'], 1, 1);
+    $pdf->Ln(5);
+
+    // Bloque 3: Responsabilidad
+    $pdf->SetFont('Arial', '', 11);
+    $pdf->Cell(0, 8, utf8_decode('CONSTANCIA DE RESPONSABILIDAD'), 1, 1, 'L', true);
+    $pdf->MultiCell(0, 8, utf8_decode("El usuario responsable declara recibir/entregar el equipo descrito en condiciones operativas. Este movimiento ha sido registrado y auditado por el sistema URTRACK."), 0, 'J');
+    $pdf->Ln(2);
+
+    $pdf->SetFont('Arial', 'B', 10);
+    $pdf->Cell(50, 8, 'Usuario Responsable:', 0);
+    $pdf->SetFont('Arial', '', 10);
+    $pdf->Cell(0, 8, $data['correo_responsable'], 0, 1);
+
+    $pdf->SetFont('Arial', 'B', 10);
+    $pdf->Cell(50, 8, utf8_decode('Técnico Responsable:'), 0);
+    $pdf->SetFont('Arial', '', 10);
+    $pdf->Cell(0, 8, utf8_decode($data['tecnico_responsable']), 0, 1);
+    $pdf->Ln(20);
+
+    // Firmas
+    $pdf->Cell(90, 0, '', 'T'); 
+    $pdf->Cell(10, 0, '', 0);
+    $pdf->Cell(90, 0, '', 'T');
+    $pdf->Ln(2);
+    $pdf->Cell(90, 5, 'Firma Responsable', 0, 0, 'C');
+    $pdf->Cell(10, 5, '', 0);
+    $pdf->Cell(90, 5, utf8_decode('Firma Dirección de Tecnología'), 0, 0, 'C');
+
+    return $pdf;
+}
+
+// 5. LÓGICA DE ENVÍO DE CORREO (Solo se ejecuta si action=send_mail)
+if ($action == 'send_mail') {
+    $pdf = construirPDF($data);
+    $pdfContent = $pdf->Output('S'); // Obtener binario del PDF
+
+    $mail = new PHPMailer(true);
+    try {
+        $mail->isSMTP();
+        $mail->Host       = SMTP_HOST;
+        $mail->SMTPAuth   = true;
+        $mail->Username   = SMTP_USER;
+        $mail->Password   = SMTP_PASS;
+        $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
+        $mail->Port       = SMTP_PORT;
+
+        $mail->setFrom(SMTP_USER, SMTP_FROM_NAME);
+        $mail->addAddress($data['correo_responsable']);
+        
+        $mail->addStringAttachment($pdfContent, 'Acta_URTRACK_' . $data['placa_ur'] . '.pdf');
+
+        $mail->isHTML(true);
+        $mail->Subject = 'URTRACK: Acta de Movimiento - Activo ' . $data['placa_ur'];
+        $mail->Body    = 'Buen día,<br><br>Adjunto encontrará el acta digital del movimiento realizado.<br>' .
+                         '<b>Tipo:</b> ' . $data['tipo_evento'] . '<br>' .
+                         '<b>Equipo:</b> ' . $data['marca'] . ' ' . $data['modelo'] . '<br><br>' .
+                         'Atentamente,<br>Dirección de Tecnología - UR';
+
+        $mail->send();
+        echo "OK"; // Respuesta para AJAX
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo "Error Mailer: {$mail->ErrorInfo}";
+    }
+    exit; // Terminar ejecución aquí para no generar HTML extra
+}
+
+// 6. VISTA HTML (Visualizador de PDF + Botón)
+if ($action == 'view') {
+    // Generamos el PDF temporalmente en base64 para mostrarlo en el iframe sin guardarlo en disco
+    $pdf = construirPDF($data);
+    $pdfBase64 = base64_encode($pdf->Output('S'));
+?>
 <!DOCTYPE html>
-<html>
+<html lang="es">
 <head>
+    <meta charset="UTF-8">
+    <title>Vista Previa Acta</title>
     <style>
-        @page { margin: 1.5cm; }
-        body { font-family: "Helvetica", sans-serif; font-size: 10pt; color: #333; }
-        .header-table { width: 100%; border-bottom: 2px solid #002D72; margin-bottom: 20px; }
-        .title { text-align: center; font-size: 14pt; font-weight: bold; margin: 20px 0; color: #002D72; }
-        .data-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
-        .data-table td { border: 1px solid #ddd; padding: 8px; vertical-align: top; }
-        .label { font-weight: bold; background-color: #f5f5f5; width: 30%; }
-        .legal-box { border: 1px solid #999; padding: 15px; font-size: 8.5pt; text-align: justify; line-height: 1.4; background: #fafafa; }
-        .sig-container { margin-top: 50px; width: 100%; }
-        .sig-line { border-top: 1px solid #000; width: 200px; margin: 0 auto 5px; }
-        .footer-info { font-size: 8pt; color: #777; text-align: center; margin-top: 30px; }
+        body { margin: 0; padding: 0; font-family: 'Segoe UI', sans-serif; background: #525659; overflow: hidden; }
+        .toolbar { background: #323639; color: white; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; height: 40px; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
+        .btn { padding: 8px 15px; border-radius: 4px; border: none; font-weight: bold; cursor: pointer; text-decoration: none; display: flex; align-items: center; gap: 8px; font-size: 0.9rem; transition: 0.2s; }
+        .btn-send { background: #22c55e; color: white; }
+        .btn-send:hover { background: #16a34a; }
+        .btn-send:disabled { background: #94a3b8; cursor: not-allowed; }
+        .btn-back { background: #64748b; color: white; }
+        .btn-back:hover { background: #475569; }
+        iframe { width: 100%; height: calc(100vh - 60px); border: none; }
+        .status-msg { margin-right: 15px; font-size: 0.9rem; }
     </style>
 </head>
 <body>
-    <table class="header-table">
-        <tr>
-            <td><h2 style="margin:0; color:#002D72;">URTRACK</h2></td>
-            <td style="text-align:right;">ID de Seguimiento: '.time().'-'.$movimiento['placa_ur'].'</td>
-        </tr>
-    </table>
-
-    <div class="title">ACTA DE RESPONSABILIDAD Y ASIGNACIÓN DE ACTIVOS</div>
-
-    <p>Se deja constancia de la entrega del siguiente activo bajo la política de uso de herramientas tecnológicas de la Institución.</p>
-
-    <table class="data-table">
-        <tr><td colspan="2" style="background:#002D72; color:white; font-weight:bold;">DATOS DEL RESPONSABLE (ASIGNADO)</td></tr>
-        <tr><td class="label">Nombre Completo:</td><td>'.$nombre_legal.'</td></tr>
-        <tr><td class="label">Correo Electrónico Real:</td><td><strong>'.$movimiento['correo_responsable'].'</strong></td></tr>
-        <tr><td class="label">Unidad / Cargo:</td><td>'.$cargo_departamento.'</td></tr>
-        <tr><td class="label">Sede / Ubicación:</td><td>'.$movimiento['sede'].' - '.$movimiento['ubicacion'].'</td></tr>
-    </table>
-
-    <table class="data-table">
-        <tr><td colspan="2" style="background:#002D72; color:white; font-weight:bold;">ESPECIFICACIONES DEL ACTIVO</td></tr>
-        <tr><td class="label">Placa Institucional:</td><td>'.$movimiento['placa_ur'].'</td></tr>
-        <tr><td class="label">Serial de Fábrica:</td><td>'.$movimiento['serial'].'</td></tr>
-        <tr><td class="label">Marca / Modelo:</td><td>'.$movimiento['marca'].' / '.$movimiento['modelo'].'</td></tr>
-        <tr><td class="label">Hostname en Red:</td><td>'.$movimiento['hostname'].'</td></tr>
-    </table>
-
-    <div class="legal-box">
-        <strong>CLÁUSULAS DE AUDITORÍA:</strong> El usuario acepta que el equipo es una herramienta de trabajo y su uso está sujeto a monitoreo institucional. La cuenta de correo <u>'.$movimiento['correo_responsable'].'</u> es la vinculada legalmente a este activo. Cualquier extravío debe ser reportado en un plazo no mayor a 24 horas adjuntando el denuncio respectivo. Este documento sirve como soporte para auditorías de inventario físico y digital.
+    <div class="toolbar">
+        <div style="display:flex; align-items:center;">
+            <a href="dashboard.php" class="btn btn-back">⬅ Volver al Dashboard</a>
+            <span style="margin-left: 20px; color:#cbd5e1;">Acta #<?= $data['id_evento'] ?> - <?= $data['placa_ur'] ?></span>
+        </div>
+        
+        <div style="display:flex; align-items:center;">
+            <span id="statusMsg" class="status-msg"></span>
+            <button id="btnSend" onclick="enviarCorreo()" class="btn btn-send">
+                📧 Enviar Copia al Usuario
+            </button>
+        </div>
     </div>
 
-    <table class="sig-container">
-        <tr>
-            <td style="text-align:center; width:50%;">
-                <div class="sig-line"></div>
-                <strong>Firma del Usuario Responsable</strong><br>
-                Identificación: _________________
-            </td>
-            <td style="text-align:center; width:50%;">
-                <div class="sig-line"></div>
-                <strong>Técnico que Entrega</strong><br>
-                '.$movimiento['tecnico_responsable'].'
-            </td>
-        </tr>
-    </table>
+    <iframe src="data:application/pdf;base64,<?= $pdfBase64 ?>" type="application/pdf"></iframe>
 
-    <div class="footer-info">
-        Documento generado automáticamente por el Sistema URTRACK el '.date("d/m/Y H:i:s").'<br>
-        Servidor: '.$_SERVER['SERVER_NAME'].' | Registro de Auditoría: '.$movimiento['fecha_evento'].'
-    </div>
+    <script>
+        function enviarCorreo() {
+            const btn = document.getElementById('btnSend');
+            const msg = document.getElementById('statusMsg');
+            
+            if(!confirm('¿Confirmar envío del acta a <?= $data['correo_responsable'] ?>?')) return;
+
+            btn.disabled = true;
+            btn.innerHTML = '⏳ Enviando...';
+            msg.innerHTML = '';
+
+            fetch('generar_acta.php?serial=<?= $serial ?>&action=send_mail')
+                .then(response => {
+                    if (response.ok) {
+                        btn.innerHTML = '✅ Correo Enviado';
+                        btn.style.background = '#0ea5e9';
+                        msg.innerHTML = 'Notificación enviada exitosamente.';
+                        msg.style.color = '#4ade80';
+                    } else {
+                        throw new Error('Error en el envío');
+                    }
+                })
+                .catch(error => {
+                    btn.disabled = false;
+                    btn.innerHTML = '❌ Reintentar';
+                    btn.style.background = '#ef4444';
+                    msg.innerHTML = 'Error al conectar con Office 365.';
+                    msg.style.color = '#fca5a5';
+                    console.error(error);
+                });
+        }
+    </script>
 </body>
-</html>';
-
-// 5. GENERACIÓN DEL PDF
-$options = new Options();
-$options->set('isHtml5ParserEnabled', true);
-$dompdf = new Dompdf($options);
-$dompdf->loadHtml($html);
-$dompdf->setPaper('A4', 'portrait');
-$dompdf->render();
-
-$dompdf->stream("Acta_Auditoria_".$movimiento['placa_ur'].".pdf", ["Attachment" => true]);
+</html>
+<?php } ?>
