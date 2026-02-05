@@ -1,8 +1,8 @@
 <?php
 /**
  * public/reportes.php
- * Dashboard de Inteligencia de Negocios (BI)
- * VERSIÓN OFFLINE (Carga local de Chart.js)
+ * Dashboard BI + Centro de Descargas Avanzado
+ * VERSIÓN FINAL: Incluye "Realizado Por" en reportes contables.
  */
 require_once '../core/db.php';
 require_once '../core/session.php';
@@ -13,85 +13,112 @@ if (!in_array($_SESSION['rol'], ['Administrador', 'Auditor', 'Recursos'])) {
     exit;
 }
 
-// 2. LÓGICA DE EXPORTACIÓN CSV
-if (isset($_POST['exportar_inventario'])) {
-    $filename = "Inventario_URTRACK_" . date('Y-m-d_H-i') . ".csv";
+// 2. LÓGICA DE EXPORTACIÓN (ROUTER DE DESCARGAS)
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    
+    // Configuración común
+    $date_now = date('Y-m-d_H-i');
     header('Content-Type: text/csv; charset=utf-8');
-    header('Content-Disposition: attachment; filename=' . $filename);
     $output = fopen('php://output', 'w');
     fprintf($output, chr(0xEF).chr(0xBB).chr(0xBF)); // BOM para Excel
-    fputcsv($output, ['PLACA', 'SERIAL', 'MARCA', 'MODELO', 'ESTADO', 'UBICACION ACTUAL', 'RESPONSABLE', 'FECHA ULTIMO MOV']);
-    
-    // Consulta Maestra: Equipos + Último Movimiento
-    $sql = "SELECT e.placa_ur, e.serial, e.marca, e.modelo, e.estado_maestro, 
-            b.ubicacion, b.correo_responsable, b.fecha_evento
-            FROM equipos e
-            LEFT JOIN bitacora b ON e.serial = b.serial_equipo 
-            AND b.id_evento = (SELECT MAX(id_evento) FROM bitacora WHERE serial_equipo = e.serial)";
-    $stmt = $pdo->query($sql);
-    while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) { fputcsv($output, $row); }
-    fclose($output); exit;
+
+    // --- A. REPORTE INVENTARIO MAESTRO (Snapshot Actual) ---
+    if (isset($_POST['btn_inventario'])) {
+        header('Content-Disposition: attachment; filename=Inventario_Maestro_' . $date_now . '.csv');
+        fputcsv($output, ['PLACA', 'SERIAL', 'MARCA', 'MODELO', 'MODALIDAD', 'ESTADO', 'UBICACION ACTUAL', 'RESPONSABLE', 'FECHA ULT. MOV']);
+        
+        $sql = "SELECT e.placa_ur, e.serial, e.marca, e.modelo, e.modalidad, e.estado_maestro, 
+                b.ubicacion, b.correo_responsable, b.fecha_evento
+                FROM equipos e
+                LEFT JOIN bitacora b ON e.serial = b.serial_equipo 
+                AND b.id_evento = (SELECT MAX(id_evento) FROM bitacora WHERE serial_equipo = e.serial)";
+        
+        $stmt = $pdo->query($sql);
+        while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) { fputcsv($output, $row); }
+        fclose($output); exit;
+    }
+
+    // --- B. REPORTE DE MOVIMIENTOS (Trazabilidad por Fechas) ---
+    if (isset($_POST['btn_movimientos'])) {
+        $inicio = $_POST['f_ini'] . ' 00:00:00';
+        $fin    = $_POST['f_fin'] . ' 23:59:59';
+        
+        header('Content-Disposition: attachment; filename=Movimientos_' . $_POST['f_ini'] . '_a_' . $_POST['f_fin'] . '.csv');
+        fputcsv($output, ['ID EVENTO', 'FECHA', 'TIPO', 'PLACA', 'SERIAL', 'EQUIPO', 'ORIGEN/SEDE', 'UBICACION DESTINO', 'RESPONSABLE', 'REALIZADO POR']);
+
+        $sql = "SELECT b.id_evento, b.fecha_evento, b.tipo_evento, e.placa_ur, b.serial_equipo, 
+                CONCAT(e.marca, ' ', e.modelo) as equipo, b.sede, b.ubicacion, b.correo_responsable, b.tecnico_responsable
+                FROM bitacora b
+                JOIN equipos e ON b.serial_equipo = e.serial
+                WHERE b.fecha_evento BETWEEN ? AND ?
+                ORDER BY b.fecha_evento DESC";
+        
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute([$inicio, $fin]);
+        while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) { fputcsv($output, $row); }
+        fclose($output); exit;
+    }
+
+    // --- C. REPORTE CONTABLE (Altas y Bajas) ---
+    // CORRECCIÓN SOLICITADA: Se agregó "REALIZADO POR"
+    if (isset($_POST['btn_contable'])) {
+        $inicio = $_POST['f_ini_c'] . ' 00:00:00';
+        $fin    = $_POST['f_fin_c'] . ' 23:59:59';
+
+        header('Content-Disposition: attachment; filename=Altas_Bajas_' . $_POST['f_ini_c'] . '_a_' . $_POST['f_fin_c'] . '.csv');
+        
+        // Encabezados corregidos
+        fputcsv($output, ['FECHA', 'TIPO MOVIMIENTO', 'PLACA', 'SERIAL', 'MARCA', 'MODELO', 'MODALIDAD', 'REALIZADO POR']);
+
+        // Consulta corregida
+        $sql = "SELECT b.fecha_evento, b.tipo_evento, e.placa_ur, b.serial_equipo, 
+                e.marca, e.modelo, e.modalidad, b.tecnico_responsable
+                FROM bitacora b
+                JOIN equipos e ON b.serial_equipo = e.serial
+                WHERE (b.tipo_evento = 'Ingreso' OR b.tipo_evento = 'Baja')
+                AND b.fecha_evento BETWEEN ? AND ?
+                ORDER BY b.fecha_evento DESC";
+
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute([$inicio, $fin]);
+        while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) { fputcsv($output, $row); }
+        fclose($output); exit;
+    }
 }
 
-// 3. RECOLECCIÓN DE DATOS
+// 3. RECOLECCIÓN DE DATOS (GRÁFICAS Y KPIs)
 try {
-    // A. KPIs Principales
     $total_activos = $pdo->query("SELECT COUNT(*) FROM equipos WHERE estado_maestro = 'Alta'")->fetchColumn();
     $total_bajas   = $pdo->query("SELECT COUNT(*) FROM equipos WHERE estado_maestro = 'Baja'")->fetchColumn();
     
-    // B. Equipos en Bodega (Lógica: Último movimiento en sitio que contenga 'Bodega')
     $en_bodega = $pdo->query("SELECT COUNT(*) FROM bitacora b 
                               WHERE b.id_evento = (SELECT MAX(id_evento) FROM bitacora b2 WHERE b2.serial_equipo = b.serial_equipo)
                               AND b.ubicacion LIKE '%Bodega%'")->fetchColumn();
-    $asignados = $total_activos - $en_bodega; // El resto se asume asignado
+    $asignados = $total_activos - $en_bodega;
 
-    // C. Movimientos del Mes
     $mes_actual = date('Y-m');
     $movs_mes = $pdo->query("SELECT COUNT(*) FROM bitacora WHERE fecha_evento LIKE '$mes_actual%'")->fetchColumn();
 
-    // D. DATOS PARA GRÁFICAS (Arrays para JS)
-    
-    // 1. Sedes (Barras Verticales)
-    $sql_sedes = "SELECT sede, COUNT(*) as cant FROM bitacora b 
-                  WHERE b.id_evento = (SELECT MAX(id_evento) FROM bitacora b2 WHERE b2.serial_equipo = b.serial_equipo)
-                  GROUP BY sede";
+    // Arrays para Gráficas
+    $sql_sedes = "SELECT sede, COUNT(*) as cant FROM bitacora b WHERE b.id_evento = (SELECT MAX(id_evento) FROM bitacora b2 WHERE b2.serial_equipo = b.serial_equipo) GROUP BY sede";
     $raw_sedes = $pdo->query($sql_sedes)->fetchAll(PDO::FETCH_ASSOC);
-    $sedes_labels = []; $sedes_data = [];
-    foreach($raw_sedes as $r) { 
-        $sedes_labels[] = $r['sede'] ?: 'Sin Asignar'; 
-        $sedes_data[] = $r['cant']; 
-    }
+    $sedes_labels = []; $sedes_data = []; foreach($raw_sedes as $r) { $sedes_labels[] = $r['sede']?:'Sin Asignar'; $sedes_data[] = $r['cant']; }
 
-    // 2. Técnicos (Top 5 - Barras Horizontales)
-    $sql_tec = "SELECT tecnico_responsable, COUNT(*) as total FROM bitacora 
-                WHERE tecnico_responsable IS NOT NULL AND tecnico_responsable != ''
-                GROUP BY tecnico_responsable ORDER BY total DESC LIMIT 5";
+    $sql_tec = "SELECT tecnico_responsable, COUNT(*) as total FROM bitacora WHERE tecnico_responsable IS NOT NULL AND tecnico_responsable != '' GROUP BY tecnico_responsable ORDER BY total DESC LIMIT 5";
     $raw_tec = $pdo->query($sql_tec)->fetchAll(PDO::FETCH_ASSOC);
-    $tec_labels = []; $tec_data = [];
-    foreach($raw_tec as $r) {
-        $tec_labels[] = explode(' ', trim($r['tecnico_responsable']))[0]; // Solo primer nombre
-        $tec_data[] = $r['total'];
-    }
+    $tec_labels = []; $tec_data = []; foreach($raw_tec as $r) { $tec_labels[] = explode(' ', trim($r['tecnico_responsable']))[0]; $tec_data[] = $r['total']; }
 
-    // 3. Modalidad de Adquisición (Torta)
     $sql_mod = "SELECT modalidad, COUNT(*) as total FROM equipos GROUP BY modalidad";
     $raw_mod = $pdo->query($sql_mod)->fetchAll(PDO::FETCH_ASSOC);
-    $mod_labels = []; $mod_data = [];
-    foreach($raw_mod as $r) {
-        $mod_labels[] = $r['modalidad'];
-        $mod_data[] = $r['total'];
-    }
+    $mod_labels = []; $mod_data = []; foreach($raw_mod as $r) { $mod_labels[] = $r['modalidad']; $mod_data[] = $r['total']; }
 
-} catch (PDOException $e) {
-    $error = "Error DB: " . $e->getMessage();
-}
+} catch (PDOException $e) { $error = $e->getMessage(); }
 ?>
 <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <title>Reportes Gerenciales | URTRACK</title>
-    
     <script src="js/chart.js"></script>
 
     <style>
@@ -99,37 +126,40 @@ try {
         body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); padding: 20px; margin: 0; }
         .container { max-width: 1200px; margin: 0 auto; }
         
-        /* HEADER */
         .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; border-bottom: 2px solid var(--primary); padding-bottom: 15px; }
         .header h2 { margin: 0; color: var(--primary); font-size: 1.8rem; }
-        .btn-back { text-decoration: none; color: #666; font-weight: 600; display: flex; align-items: center; gap: 5px; }
-        .btn-back:hover { color: var(--primary); }
+        .btn-back { text-decoration: none; color: #666; font-weight: 600; }
 
         /* KPI GRID */
         .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px; margin-bottom: 40px; }
-        .kpi-card { background: var(--card); padding: 25px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); border-left: 5px solid var(--primary); transition: transform 0.2s; }
-        .kpi-card:hover { transform: translateY(-3px); }
-        .kpi-title { font-size: 0.85rem; color: #666; text-transform: uppercase; font-weight: bold; letter-spacing: 0.5px; }
+        .kpi-card { background: var(--card); padding: 25px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); border-left: 5px solid var(--primary); }
+        .kpi-title { font-size: 0.85rem; color: #666; text-transform: uppercase; font-weight: bold; }
         .kpi-value { font-size: 2.2rem; font-weight: 700; color: var(--primary); margin: 10px 0; }
-        .kpi-sub { font-size: 0.85rem; color: #888; }
 
-        /* GRID DE GRÁFICOS */
+        /* CHARTS GRID */
         .charts-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(450px, 1fr)); gap: 25px; margin-bottom: 40px; }
         .chart-card { background: var(--card); padding: 25px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
-        .chart-header { display: flex; justify-content: space-between; margin-bottom: 15px; border-bottom: 1px solid #eee; padding-bottom: 10px; }
+        .chart-header { display: flex; justify-content: space-between; border-bottom: 1px solid #eee; padding-bottom: 10px; margin-bottom: 15px; }
         .chart-title { font-weight: bold; color: #444; font-size: 1.1rem; }
         .chart-canvas-container { position: relative; height: 250px; width: 100%; }
 
-        /* PANEL DE DESCARGA */
-        .report-panel { background: var(--card); padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 20px; }
-        .report-text h3 { margin: 0 0 10px 0; color: var(--primary); }
-        .report-text p { margin: 0; color: #666; max-width: 600px; }
-        .btn-download { background: #22c55e; color: white; border: none; padding: 15px 30px; border-radius: 6px; cursor: pointer; font-size: 1rem; font-weight: bold; display: flex; align-items: center; gap: 10px; transition: 0.2s; }
-        .btn-download:hover { background: #16a34a; box-shadow: 0 4px 12px rgba(34, 197, 94, 0.3); }
+        /* ZONA DE DESCARGAS */
+        .downloads-title { font-size: 1.2rem; color: var(--primary); margin-bottom: 20px; font-weight: bold; border-left: 5px solid #22c55e; padding-left: 15px; }
+        .downloads-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 25px; }
+        
+        .download-card { background: var(--card); padding: 25px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); display: flex; flex-direction: column; justify-content: space-between; }
+        .download-card h4 { margin: 0 0 10px 0; color: #333; }
+        .download-card p { font-size: 0.85rem; color: #666; margin-bottom: 20px; flex-grow: 1; }
+        
+        .date-group { display: flex; gap: 10px; margin-bottom: 15px; }
+        .date-input { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-family: sans-serif; }
+        
+        .btn-dl { width: 100%; padding: 12px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; display: flex; align-items: center; justify-content: center; gap: 10px; transition: 0.2s; }
+        .btn-dl-blue { background: #002D72; color: white; }
+        .btn-dl-green { background: #198754; color: white; }
+        .btn-dl-orange { background: #fd7e14; color: white; }
+        .btn-dl:hover { opacity: 0.9; transform: translateY(-2px); }
 
-        @media (max-width: 768px) {
-            .charts-grid { grid-template-columns: 1fr; }
-        }
     </style>
 </head>
 <body>
@@ -137,153 +167,99 @@ try {
 <div class="container">
     <div class="header">
         <h2>📊 Inteligencia de Negocio</h2>
-        <a href="dashboard.php" class="btn-back">⬅ Volver al Dashboard</a>
+        <a href="dashboard.php" class="btn-back">⬅ Volver</a>
     </div>
 
     <div class="kpi-grid">
-        <div class="kpi-card">
-            <div class="kpi-title">Total Activos</div>
-            <div class="kpi-value"><?= number_format($total_activos) ?></div>
-            <div class="kpi-sub">Equipos en Alta</div>
-        </div>
-        <div class="kpi-card" style="border-color: #f59e0b;">
-            <div class="kpi-title">En Bodega</div>
-            <div class="kpi-value"><?= number_format($en_bodega) ?></div>
-            <div class="kpi-sub">Disponibles para asignar</div>
-        </div>
-        <div class="kpi-card" style="border-color: #22c55e;">
-            <div class="kpi-title">Asignados</div>
-            <div class="kpi-value"><?= number_format($asignados) ?></div>
-            <div class="kpi-sub">En manos de usuarios</div>
-        </div>
-        <div class="kpi-card" style="border-color: #3b82f6;">
-            <div class="kpi-title">Productividad</div>
-            <div class="kpi-value"><?= $movs_mes ?></div>
-            <div class="kpi-sub">Movimientos este mes</div>
-        </div>
+        <div class="kpi-card"><div class="kpi-title">Total Activos</div><div class="kpi-value"><?= number_format($total_activos) ?></div></div>
+        <div class="kpi-card" style="border-color: #f59e0b;"><div class="kpi-title">En Bodega</div><div class="kpi-value"><?= number_format($en_bodega) ?></div></div>
+        <div class="kpi-card" style="border-color: #22c55e;"><div class="kpi-title">Asignados</div><div class="kpi-value"><?= number_format($asignados) ?></div></div>
+        <div class="kpi-card" style="border-color: #3b82f6;"><div class="kpi-title">Productividad</div><div class="kpi-value"><?= $movs_mes ?></div></div>
     </div>
 
     <div class="charts-grid">
         <div class="chart-card">
-            <div class="chart-header">
-                <span class="chart-title">💰 Modalidad de Adquisición</span>
-            </div>
-            <div class="chart-canvas-container">
-                <canvas id="chartModalidad"></canvas>
-            </div>
+            <div class="chart-header"><span class="chart-title">💰 Modalidad</span></div>
+            <div class="chart-canvas-container"><canvas id="chartModalidad"></canvas></div>
         </div>
-
         <div class="chart-card">
-            <div class="chart-header">
-                <span class="chart-title">📍 Distribución por Sede</span>
-            </div>
-            <div class="chart-canvas-container">
-                <canvas id="chartSedes"></canvas>
-            </div>
+            <div class="chart-header"><span class="chart-title">📍 Sedes</span></div>
+            <div class="chart-canvas-container"><canvas id="chartSedes"></canvas></div>
         </div>
-
         <div class="chart-card">
-            <div class="chart-header">
-                <span class="chart-title">🏆 Top Técnicos (Movimientos)</span>
-            </div>
-            <div class="chart-canvas-container">
-                <canvas id="chartTecnicos"></canvas>
-            </div>
+            <div class="chart-header"><span class="chart-title">🏆 Top Técnicos</span></div>
+            <div class="chart-canvas-container"><canvas id="chartTecnicos"></canvas></div>
         </div>
-
         <div class="chart-card">
-            <div class="chart-header">
-                <span class="chart-title">♻️ Ciclo de Vida (Alta vs Baja)</span>
-            </div>
-            <div class="chart-canvas-container">
-                <canvas id="chartVida"></canvas>
-            </div>
+            <div class="chart-header"><span class="chart-title">♻️ Ciclo de Vida</span></div>
+            <div class="chart-canvas-container"><canvas id="chartVida"></canvas></div>
         </div>
     </div>
 
-    <div class="report-panel">
-        <div class="report-text">
-            <h3>📥 Exportación de Inventario Maestro</h3>
-            <p>Genera un archivo CSV compatible con Excel que cruza la base de datos de equipos con su última ubicación registrada en la bitácora.</p>
+    <h3 class="downloads-title">📥 Centro de Descargas</h3>
+    <div class="downloads-grid">
+        
+        <div class="download-card">
+            <div>
+                <h4>📦 Inventario Maestro</h4>
+                <p>Foto actual de todos los equipos, ubicación en tiempo real y estado operativo.</p>
+            </div>
+            <form method="POST">
+                <button type="submit" name="btn_inventario" class="btn-dl btn-dl-blue">
+                    📄 Descargar Actual
+                </button>
+            </form>
         </div>
-        <form method="POST">
-            <button type="submit" name="exportar_inventario" class="btn-download">
-                📄 DESCARGAR REPORTE COMPLETO
-            </button>
-        </form>
+
+        <div class="download-card">
+            <div>
+                <h4>🚚 Trazabilidad / Movimientos</h4>
+                <p>Historial detallado de asignaciones, devoluciones y traslados por rango de fecha.</p>
+            </div>
+            <form method="POST">
+                <div class="date-group">
+                    <input type="date" name="f_ini" class="date-input" required title="Desde">
+                    <input type="date" name="f_fin" class="date-input" required title="Hasta" value="<?= date('Y-m-d') ?>">
+                </div>
+                <button type="submit" name="btn_movimientos" class="btn-dl btn-dl-green">
+                    📅 Exportar Movimientos
+                </button>
+            </form>
+        </div>
+
+        <div class="download-card">
+            <div>
+                <h4>📈 Reporte Contable (Altas/Bajas)</h4>
+                <p>Equipos ingresados (Compras) y retirados (Bajas) con responsable del trámite.</p>
+            </div>
+            <form method="POST">
+                <div class="date-group">
+                    <input type="date" name="f_ini_c" class="date-input" required title="Desde">
+                    <input type="date" name="f_fin_c" class="date-input" required title="Hasta" value="<?= date('Y-m-d') ?>">
+                </div>
+                <button type="submit" name="btn_contable" class="btn-dl btn-dl-orange">
+                    📊 Exportar Contable
+                </button>
+            </form>
+        </div>
+
     </div>
 </div>
 
 <script>
-    // Configuración Global de colores
     Chart.defaults.font.family = "'Segoe UI', sans-serif";
     Chart.defaults.color = '#666';
 
-    // 1. MODALIDAD (PIE)
-    new Chart(document.getElementById('chartModalidad'), {
-        type: 'pie',
-        data: {
-            labels: <?= json_encode($mod_labels) ?>,
-            datasets: [{
-                data: <?= json_encode($mod_data) ?>,
-                backgroundColor: ['#002D72', '#28a745', '#ffc107', '#17a2b8'],
-                borderWidth: 1
-            }]
-        },
-        options: { maintainAspectRatio: false, plugins: { legend: { position: 'right' } } }
-    });
+    const jsonModL = <?= json_encode($mod_labels) ?>; const jsonModD = <?= json_encode($mod_data) ?>;
+    new Chart(document.getElementById('chartModalidad'), { type: 'pie', data: { labels: jsonModL, datasets: [{ data: jsonModD, backgroundColor: ['#002D72', '#28a745', '#ffc107', '#17a2b8'], borderWidth: 1 }] }, options: { maintainAspectRatio: false, plugins: { legend: { position: 'right' } } } });
 
-    // 2. SEDES (BAR)
-    new Chart(document.getElementById('chartSedes'), {
-        type: 'bar',
-        data: {
-            labels: <?= json_encode($sedes_labels) ?>,
-            datasets: [{
-                label: 'Equipos',
-                data: <?= json_encode($sedes_data) ?>,
-                backgroundColor: '#002D72',
-                borderRadius: 4
-            }]
-        },
-        options: { 
-            maintainAspectRatio: false,
-            scales: { y: { beginAtZero: true } },
-            plugins: { legend: { display: false } }
-        }
-    });
+    const jsonSedeL = <?= json_encode($sedes_labels) ?>; const jsonSedeD = <?= json_encode($sedes_data) ?>;
+    new Chart(document.getElementById('chartSedes'), { type: 'bar', data: { labels: jsonSedeL, datasets: [{ label: 'Equipos', data: jsonSedeD, backgroundColor: '#002D72', borderRadius: 4 }] }, options: { maintainAspectRatio: false, scales: { y: { beginAtZero: true } }, plugins: { legend: { display: false } } } });
 
-    // 3. TÉCNICOS (HORIZONTAL BAR)
-    new Chart(document.getElementById('chartTecnicos'), {
-        type: 'bar',
-        data: {
-            labels: <?= json_encode($tec_labels) ?>,
-            datasets: [{
-                label: 'Movimientos',
-                data: <?= json_encode($tec_data) ?>,
-                backgroundColor: '#17a2b8',
-                borderRadius: 4
-            }]
-        },
-        options: { 
-            indexAxis: 'y',
-            maintainAspectRatio: false,
-            plugins: { legend: { display: false } }
-        }
-    });
+    const jsonTecL = <?= json_encode($tec_labels) ?>; const jsonTecD = <?= json_encode($tec_data) ?>;
+    new Chart(document.getElementById('chartTecnicos'), { type: 'bar', data: { labels: jsonTecL, datasets: [{ label: 'Movs', data: jsonTecD, backgroundColor: '#17a2b8', borderRadius: 4 }] }, options: { indexAxis: 'y', maintainAspectRatio: false, plugins: { legend: { display: false } } } });
 
-    // 4. VIDA UTIL (DOUGHNUT)
-    new Chart(document.getElementById('chartVida'), {
-        type: 'doughnut',
-        data: {
-            labels: ['Activos (Alta)', 'De Baja'],
-            datasets: [{
-                data: [<?= $total_activos ?>, <?= $total_bajas ?>],
-                backgroundColor: ['#28a745', '#dc3545'],
-                hoverOffset: 4
-            }]
-        },
-        options: { maintainAspectRatio: false }
-    });
+    new Chart(document.getElementById('chartVida'), { type: 'doughnut', data: { labels: ['Activos', 'Bajas'], datasets: [{ data: [<?= $total_activos ?>, <?= $total_bajas ?>], backgroundColor: ['#28a745', '#dc3545'], hoverOffset: 4 }] }, options: { maintainAspectRatio: false } });
 </script>
 
 </body>
