@@ -1,28 +1,28 @@
 <?php
 /**
  * public/generar_acta.php
- * Generación de Acta PDF y Envío de Correo (Escenario B: Verificación Previa)
- * CORREGIDO: Importación de FPDF y columna id_evento
+ * Generación de Acta PDF y Envío de Correo
+ * CORRECCIÓN: Solución de carga de FPDF
  */
 require_once '../core/db.php';
 require_once '../core/session.php';
 require_once '../core/config_mail.php';
 require_once '../vendor/autoload.php'; 
 
-// IMPORTANTE: Estas líneas permiten usar las librerías instaladas
+// USAMOS SOLAMENTE PHPMAILER AQUÍ
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
-use FPDF; // <--- ESTA LÍNEA SOLUCIONA EL ERROR 500
 
-// 1. VALIDACIÓN BÁSICA
+// NOTA: No usamos "use FPDF;" porque es una clase global.
+
+// 1. VALIDACIÓN
 if (!isset($_GET['serial'])) {
-    die("<div style='color:red; text-align:center; margin-top:50px; font-family:sans-serif;'>Error: No se especificó un serial para generar el acta.</div>");
+    die("<div style='color:red; text-align:center; margin-top:50px; font-family:sans-serif;'>Error: No se especificó un serial.</div>");
 }
 $serial = $_GET['serial'];
 $action = $_GET['action'] ?? 'view';
 
 // 2. OBTENER DATOS 
-// Corrección SQL: Usamos 'b.id_evento' porque 'b.id' no existe en tu tabla bitacora
 $sql = "SELECT e.*, b.*, l.nombre as nombre_lugar 
         FROM equipos e
         JOIN bitacora b ON e.serial = b.serial_equipo
@@ -36,13 +36,12 @@ $data = $stmt->fetch(PDO::FETCH_ASSOC);
 
 if (!$data) {
     die("<div style='color:red; text-align:center; margin-top:50px; font-family:sans-serif;'>
-            Error: No existen movimientos en la bitácora para el equipo <b>$serial</b>.<br>
-            Asegúrese de haber registrado el movimiento primero.
+            Error: No existen movimientos en la bitácora para el equipo <b>$serial</b>.
          </div>");
 }
 
-// 3. CLASE PDF (FPDF)
-class PDF extends FPDF {
+// 3. CLASE PDF (Extendemos de \FPDF con barra invertida para indicar Global)
+class PDF extends \FPDF {
     function Header() {
         if(file_exists('img/logo_ur.png')) { 
             $this->Image('img/logo_ur.png', 10, 8, 33);
@@ -58,15 +57,15 @@ class PDF extends FPDF {
     }
 }
 
-// 4. FUNCIÓN CONSTRUCTORA DEL PDF
+// 4. FUNCIÓN CONSTRUCTORA
 function construirPDF($data) {
+    // Instanciamos \FPDF explícitamente
     $pdf = new PDF();
     $pdf->AddPage();
     $pdf->SetFont('Arial', '', 11);
 
     // Bloque 1: Datos del Evento
     $pdf->SetFillColor(230, 240, 255);
-    // Usamos id_evento aquí también
     $pdf->Cell(0, 8, utf8_decode('DETALLES DE LA TRANSACCIÓN #') . $data['id_evento'], 1, 1, 'L', true);
     
     $pdf->SetFont('Arial', 'B', 10);
@@ -141,10 +140,10 @@ function construirPDF($data) {
     return $pdf;
 }
 
-// 5. LÓGICA DE ENVÍO DE CORREO
+// 5. ENVÍO DE CORREO
 if ($action == 'send_mail') {
     $pdf = construirPDF($data);
-    $pdfContent = $pdf->Output('S'); // Binario del PDF
+    $pdfContent = $pdf->Output('S'); 
 
     $mail = new PHPMailer(true);
     try {
@@ -180,7 +179,6 @@ if ($action == 'send_mail') {
 // 6. VISTA HTML
 if ($action == 'view') {
     $pdf = construirPDF($data);
-    // Codificamos en base64 para mostrar sin guardar archivo físico
     $pdfBase64 = base64_encode($pdf->Output('S'));
 ?>
 <!DOCTYPE html>
