@@ -133,14 +133,13 @@ $rol = $_SESSION['rol']; // Atajo para escribir menos código
                 <h3>🏢 Sedes y Edificios</h3>
                 <p>Administración del catálogo de ubicaciones.</p>
             </a>
-        <?php endif; ?>
-
-        <?php if (in_array($rol, ['Administrador', 'Recursos', 'Soporte'])): ?>
-            <a href="registro_movimiento.php" class="action-card card-move">
-                <h3>🚚 Registro de Movimiento</h3>
-                <p>Asignaciones, devoluciones y traslados entre sedes.</p>
+            <a href="configuracion.php" class="action-card card-admin" style="border-top-color: #343a40;">
+                <h3>⚙️ Configuración Sistema</h3>
+                <p>Credenciales SMTP, LDAP, DB y Textos Legales.</p>
             </a>
         <?php endif; ?>
+
+        
 
     </div>
 </div>

@@ -114,7 +114,11 @@ function construirPDF($data) {
     // Bloque 3: Responsabilidad
     $pdf->SetFont('Arial', '', 11);
     $pdf->Cell(0, 8, utf8_decode('CONSTANCIA DE RESPONSABILIDAD'), 1, 1, 'L', true);
-    $pdf->MultiCell(0, 8, utf8_decode("El usuario responsable declara recibir/entregar el equipo descrito en condiciones operativas. Este movimiento ha sido registrado y auditado por el sistema URTRACK."), 0, 'J');
+    // CAMBIO: Leemos el texto desde el archivo externo
+    $texto_legal = file_get_contents('../core/acta_legal.txt');
+    if(!$texto_legal) $texto_legal = "El usuario responsable declara recibir/entregar el equipo..."; // Fallback
+    
+    $pdf->MultiCell(0, 8, utf8_decode($texto_legal), 0, 'J');
     $pdf->Ln(2);
 
     $pdf->SetFont('Arial', 'B', 10);
