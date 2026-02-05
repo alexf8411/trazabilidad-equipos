@@ -69,7 +69,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirmar'])) {
             strtoupper($_POST['hostname'])
         ]);
 
-        $pdo->prepare("UPDATE equipos SET estado_maestro = 'Asignado' WHERE serial = ?")->execute([$_POST['serial']]);
+        //$pdo->prepare("UPDATE equipos SET estado_maestro = 'Asignado' WHERE serial = ?")->execute([$_POST['serial']]);
 
         $pdo->commit();
         header("Location: generar_acta.php?serial=" . $_POST['serial']);
