@@ -1,7 +1,7 @@
 <?php
 /**
  * public/registro_movimiento.php
- * Módulo de Asignación de Activos con Validación de Estado y Campos Adicionales
+ * Módulo de Asignación de Activos con Validación LDAP Flexible
  */
 require_once '../core/db.php';
 require_once '../core/session.php';
@@ -18,10 +18,11 @@ $msg = "";
 $stmt_lugares = $pdo->query("SELECT * FROM lugares WHERE estado = 1 ORDER BY sede, nombre");
 $lugares = $stmt_lugares->fetchAll(PDO::FETCH_ASSOC);
 
-// 3. Buscar Equipo
+// 3. Buscar Equipo (Paso 1 del flujo) - CONSULTA ACTUALIZADA
 if (isset($_GET['buscar']) && !empty($_GET['criterio'])) {
     $criterio = trim($_GET['criterio']);
     
+    // Esta consulta busca el equipo y hace un JOIN con su último movimiento en bitácora
     $sql_buscar = "SELECT e.*, 
                    b.correo_responsable AS responsable_actual, 
                    b.ubicacion AS ubicacion_actual, 
@@ -38,15 +39,10 @@ if (isset($_GET['buscar']) && !empty($_GET['criterio'])) {
     
     if (!$equipo) {
         $msg = "<div class='alert error'>❌ Equipo no localizado en inventario.</div>";
-    } 
-    // VALIDACIÓN CRÍTICA: Bloqueo de equipos dados de baja
-    elseif ($equipo['estado_maestro'] === 'Baja') {
-        $msg = "<div class='alert error'>🛑 <b>ACCESO DENEGADO:</b> El equipo con placa <b>{$equipo['placa_ur']}</b> está en estado de <b>BAJA</b>. No se permiten movimientos de activos retirados.</div>";
-        $equipo = null; // Impedimos que se cargue el formulario
     }
 }
 
-// 4. Procesar Asignación
+// 4. Procesar Asignación (Se mantiene igual, asegura integridad)
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirmar'])) {
     try {
         $pdo->beginTransaction();
@@ -55,13 +51,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirmar'])) {
         $stmt_l->execute([$_POST['id_lugar']]);
         $l = $stmt_l->fetch();
 
-        // Query actualizada con campo_adic1 y campo_adic2
         $sql = "INSERT INTO bitacora (
                     serial_equipo, id_lugar, sede, ubicacion, 
-                    campo_adic1, campo_adic2,
                     tipo_evento, correo_responsable, tecnico_responsable, 
                     hostname, fecha_evento
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())";
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())";
         
         $stmt = $pdo->prepare($sql);
         $stmt->execute([
@@ -69,13 +63,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirmar'])) {
             $_POST['id_lugar'], 
             $l['sede'], 
             $l['nombre'],
-            $_POST['campo_adic1'], // Nuevo
-            $_POST['campo_adic2'], // Nuevo
             $_POST['tipo_evento'], 
             $_POST['correo_resp_real'], 
             $_SESSION['nombre'], 
             strtoupper($_POST['hostname'])
         ]);
+
+        //$pdo->prepare("UPDATE equipos SET estado_maestro = 'Asignado' WHERE serial = ?")->execute([$_POST['serial']]);
 
         $pdo->commit();
         header("Location: generar_acta.php?serial=" . $_POST['serial']);
@@ -98,17 +92,18 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirmar'])) {
         .card { background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.05); max-width: 900px; margin: auto; }
         .header { display: flex; justify-content: space-between; border-bottom: 2px solid var(--primary); padding-bottom: 15px; margin-bottom: 30px; }
         .search-section { display: flex; gap: 10px; margin-bottom: 30px; background: #f1f5f9; padding: 20px; border-radius: 8px; }
-        input, select { padding: 12px; border: 1px solid #cbd5e1; border-radius: 6px; width: 100%; box-sizing: border-box; }
+        input, select { padding: 12px; border: 1px solid #cbd5e1; border-radius: 6px; width: 100%; }
         
+        /* Píldora de información mejorada */
         .info-pill { background: #f8fafc; padding: 20px; border-radius: 8px; margin-bottom: 25px; display: grid; grid-template-columns: 1fr 1fr; gap: 15px; border-left: 5px solid var(--primary); }
         .current-status-box { grid-column: span 2; background: #fff7ed; border: 1px solid #fed7aa; padding: 10px; border-radius: 6px; margin-top: 10px; }
         
-        .label-sm { display: block; font-size: 0.7rem; color: var(--text-secondary); text-transform: uppercase; font-weight: 700; margin-bottom: 5px; }
+        .label-sm { font-size: 0.7rem; color: var(--text-secondary); text-transform: uppercase; font-weight: 700; }
         .data-val { font-size: 0.95rem; font-weight: 600; color: #1e293b; }
-        .btn-submit { background: var(--success); color: white; border: none; padding: 18px; border-radius: 8px; width: 100%; font-weight: 700; cursor: pointer; opacity: 0.5; margin-top: 20px; }
+        .btn-submit { background: var(--success); color: white; border: none; padding: 18px; border-radius: 8px; width: 100%; font-weight: 700; cursor: pointer; opacity: 0.5; }
         .user-card { background: #fff; border: 2px solid var(--primary); padding: 15px; border-radius: 8px; margin-top: 15px; display: none; }
-        .alert { padding: 15px; border-radius: 8px; margin-bottom: 20px; font-weight: 500; }
-        .error { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
+        .alert { padding: 15px; border-radius: 8px; margin-bottom: 20px; }
+        .error { background: #fee2e2; color: #991b1b; }
     </style>
 </head>
 <body>
@@ -122,8 +117,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirmar'])) {
     <?= $msg ?>
 
     <form method="GET" class="search-section">
-        <input type="text" name="criterio" placeholder="Escanee Placa UR o Serial..." value="<?= htmlspecialchars($_GET['criterio'] ?? '') ?>" required autofocus>
-        <button type="submit" name="buscar" style="background:var(--primary); color:white; border:none; padding:10px 20px; border-radius:6px; cursor:pointer; font-weight:bold;">BUSCAR</button>
+        <input type="text" name="criterio" placeholder="Escanee Placa UR o Serial..." value="<?= $_GET['criterio'] ?? '' ?>" required autofocus>
+        <button type="submit" name="buscar" style="background:var(--primary); color:white; border:none; padding:10px 20px; border-radius:6px; cursor:pointer;">BUSCAR</button>
     </form>
 
     <?php if ($equipo): ?>
@@ -158,6 +153,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirmar'])) {
                     <label class="label-sm">Tipo de Movimiento</label>
                     <select name="tipo_evento">
                         <option value="Asignación">Asignación (Entrega)</option>
+                        <!--<option value="Traslado">Traslado (Cambio de Sede)</option> Aqui irian mas estados-->
                         <option value="Devolución">Devolución a Bodega</option>
                     </select>
                 </div>
@@ -179,20 +175,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirmar'])) {
                     </select>
                 </div>
 
-                <div>
-                    <label class="label-sm">Campo Adicional 1</label>
-                    <input type="text" name="campo_adic1" placeholder="Información extra 1...">
-                </div>
-                <div>
-                    <label class="label-sm">Campo Adicional 2</label>
-                    <input type="text" name="campo_adic2" placeholder="Información extra 2...">
-                </div>
-
                 <div style="grid-column: span 2;">
                     <label class="label-sm">Nuevo Responsable (LDAP)</label>
                     <div style="display:flex; gap:10px;">
                         <input type="text" id="user_id" placeholder="nombre.apellido">
-                        <button type="button" onclick="verificarUsuario()" style="white-space:nowrap; background:var(--primary); color:white; border:none; padding:0 15px; border-radius:6px; cursor:pointer;">🔍 Verificar</button>
+                        <button type="button" onclick="verificarUsuario()" style="white-space:nowrap; padding:0 10px;">🔍 Verificar</button>
                     </div>
                     <div id="userCard" class="user-card">
                         <h4 id="ldap_nombre" style="margin:0; color:var(--primary);"></h4>
@@ -211,9 +198,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirmar'])) {
                 const sl = document.getElementById('selectLugar');
                 sl.innerHTML = '<option value="">-- Seleccionar Ubicación --</option>';
                 const filtrados = lugaresData.filter(l => l.sede === sede);
-                filtrados.forEach(l => { 
-                    sl.innerHTML += `<option value="${l.id}">${l.nombre}</option>`; 
-                });
+                filtrados.forEach(l => { sl.innerHTML += `<option value="${l.id}">${l.nombre}</option>`; });
                 sl.disabled = (filtrados.length === 0);
             }
         </script>
