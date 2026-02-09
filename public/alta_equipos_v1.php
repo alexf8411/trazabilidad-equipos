@@ -1,7 +1,7 @@
 <?php
 /**
  * public/alta_equipos.php
- * Módulo de Registro Maestro (Recursos) - Versión Ajustada Fase 3
+ * Módulo de Registro Maestro (Recursos) - Con opción Masiva
  */
 require_once '../core/db.php';
 require_once '../core/session.php';
@@ -15,18 +15,12 @@ if (!in_array($_SESSION['rol'], $roles_permitidos)) {
 
 $msg = "";
 
-// 2. PROCESAMIENTO DEL FORMULARIO
+// 2. PROCESAMIENTO DEL FORMULARIO (Se mantiene tu lógica atómica)
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
-    // Sanitización básica
     $placa = trim($_POST['placa']);
     $serial = trim($_POST['serial']);
     $marca = trim($_POST['marca']);
     $modelo = trim($_POST['modelo']);
-    
-    // NUEVOS CAMPOS
-    $vida_util = (int) $_POST['vida_util'];
-    $precio = (float) $_POST['precio'];
-    
     $modalidad = $_POST['modalidad'];
     $fecha_compra = $_POST['fecha_compra'];
     $fecha_evento = date('Y-m-d H:i:s');
@@ -34,22 +28,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     try {
         $pdo->beginTransaction();
 
-        // A. INSERTAR EN EQUIPOS (HOJA DE VIDA)
-        // Se agregaron precio y vida_util a la consulta
-        $sql_equipo = "INSERT INTO equipos (
-                            placa_ur, serial, marca, modelo, 
-                            vida_util, precio, 
-                            fecha_compra, modalidad, estado_maestro
-                       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Alta')";
-        
+        $sql_equipo = "INSERT INTO equipos (placa_ur, serial, marca, modelo, fecha_compra, modalidad, estado_maestro) 
+                       VALUES (?, ?, ?, ?, ?, ?, 'Alta')";
         $stmt = $pdo->prepare($sql_equipo);
-        $stmt->execute([
-            $placa, $serial, $marca, $modelo, 
-            $vida_util, $precio, 
-            $fecha_compra, $modalidad
-        ]);
+        $stmt->execute([$placa, $serial, $marca, $modelo, $fecha_compra, $modalidad]);
         
-        // B. OBTENER UBICACIÓN INICIAL (BODEGA)
         $stmt_bodega = $pdo->prepare("SELECT id, sede, nombre FROM lugares WHERE nombre = 'Bodega de Tecnología' LIMIT 1");
         $stmt_bodega->execute();
         $bodega = $stmt_bodega->fetch(PDO::FETCH_ASSOC);
@@ -58,13 +41,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             throw new Exception("Error Crítico: No existe la 'Bodega de Tecnología' en el catálogo de lugares.");
         }
 
-        // C. INSERTAR EN BITÁCORA (PRIMER EVENTO)
-        // CAMBIO: Hostname ahora es igual al Serial por defecto
         $sql_bitacora = "INSERT INTO bitacora (
                             serial_equipo, id_lugar, sede, ubicacion, 
                             tipo_evento, correo_responsable, fecha_evento, 
                             tecnico_responsable, hostname
-                          ) VALUES (?, ?, ?, ?, 'Ingreso', ?, ?, ?, ?)";
+                         ) VALUES (?, ?, ?, ?, 'Ingreso', ?, ?, ?, 'PENDIENTE')";
         
         $stmt_b = $pdo->prepare($sql_bitacora);
         $stmt_b->execute([
@@ -74,8 +55,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $bodega['nombre'],
             'Bodega de TI',
             $fecha_evento,
-            $_SESSION['nombre'],
-            $serial // <--- AQUÍ EL CAMBIO: Hostname = Serial
+            $_SESSION['nombre']
         ]);
 
         $pdo->commit();
@@ -85,9 +65,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     } catch (PDOException $e) {
         $pdo->rollBack();
         if ($e->getCode() == '23000') {
-            $msg = "<div class='toast error'>⚠️ Error: La Placa o el Serial ya existen en el sistema.</div>";
+            $msg = "<div class='toast error'>⚠️ Error: La Placa o el Serial ya existen.</div>";
         } else {
-            $msg = "<div class='toast error'>❌ Error SQL: " . $e->getMessage() . "</div>";
+            $msg = "<div class='toast error'>❌ Error: " . $e->getMessage() . "</div>";
         }
     } catch (Exception $e) {
         $pdo->rollBack();
@@ -95,7 +75,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     }
 }
 
-// Mensajes de éxito
 if (isset($_GET['status']) && $_GET['status'] == 'success') {
     $placa_creada = htmlspecialchars($_GET['p']);
     $msg = "<div class='toast success'>✅ Equipo <b>$placa_creada</b> ingresado correctamente.</div>";
@@ -111,18 +90,41 @@ if (isset($_GET['status']) && $_GET['status'] == 'success') {
         :root { --primary: #002D72; --accent: #28a745; --bg: #f0f2f5; --white: #fff; }
         body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); padding: 20px; color: #333; }
         .container { max-width: 850px; margin: 0 auto; }
+        
         .main-card { background: var(--white); padding: 30px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }
+        
         header { border-bottom: 2px solid var(--primary); padding-bottom: 15px; margin-bottom: 25px; display: flex; justify-content: space-between; align-items: center; }
         h1 { margin: 0; color: var(--primary); font-size: 1.5rem; }
-        .bulk-banner { background: #e7f1ff; border: 1px solid #b6d4fe; padding: 15px; border-radius: 8px; margin-bottom: 25px; display: flex; justify-content: space-between; align-items: center; }
-        .btn-bulk { background: #0d6efd; color: white; text-decoration: none; padding: 10px 20px; border-radius: 5px; font-weight: bold; font-size: 0.9rem; }
+        
+        /* Estilo para el banner de importación masiva */
+        .bulk-banner { 
+            background: #e7f1ff; 
+            border: 1px solid #b6d4fe; 
+            padding: 15px; 
+            border-radius: 8px; 
+            margin-bottom: 25px; 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+        }
+        .btn-bulk { 
+            background: #0d6efd; 
+            color: white; 
+            text-decoration: none; 
+            padding: 10px 20px; 
+            border-radius: 5px; 
+            font-weight: bold; 
+            font-size: 0.9rem;
+        }
         .btn-bulk:hover { background: #0b5ed7; }
+
         .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
         .form-group { margin-bottom: 15px; }
         label { display: block; margin-bottom: 5px; font-weight: 600; font-size: 0.9rem; color: #555; }
         input, select { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
         .full-width { grid-column: 1 / -1; }
         .btn-submit { background: var(--primary); color: white; width: 100%; padding: 12px; border: none; border-radius: 4px; font-size: 1rem; font-weight: bold; cursor: pointer; }
+        
         .toast { padding: 15px; border-radius: 4px; margin-bottom: 20px; border-left: 5px solid; }
         .success { background: #d4edda; color: #155724; border-color: #28a745; }
         .error { background: #f8d7da; color: #721c24; border-color: #dc3545; }
@@ -173,15 +175,6 @@ if (isset($_GET['status']) && $_GET['status'] == 'success') {
                     <label>Modelo *</label>
                     <input type="text" name="modelo" required placeholder="Ej: ProBook 440">
                 </div>
-
-                <div class="form-group">
-                    <label>Vida Útil (Años) *</label>
-                    <input type="number" name="vida_util" min="1" max="20" required placeholder="Ej: 5">
-                </div>
-                <div class="form-group">
-                    <label>Precio (COP) *</label>
-                    <input type="number" name="precio" min="0" step="0.01" required placeholder="Ej: 4500000">
-                </div>
                 <div class="form-group">
                     <label>Fecha de Compra *</label>
                     <input type="date" name="fecha_compra" required>
@@ -194,9 +187,8 @@ if (isset($_GET['status']) && $_GET['status'] == 'success') {
                         <option value="Proyecto">Proyecto</option>
                     </select>
                 </div>
-
                 <div class="full-width info-box">
-                    ℹ️ El equipo ingresará automáticamente a <strong>Bodega de Tecnología</strong> y su Hostname será igual al Serial.
+                    ℹ️ El equipo ingresará automáticamente a <strong>Bodega de Tecnología</strong>.
                 </div>
                 <div class="full-width">
                     <button type="submit" class="btn-submit">💾 Guardar Equipo Único</button>
