@@ -2,6 +2,7 @@
 /**
  * public/registro_movimiento.php
  * Módulo de Asignación: Bloqueo de Bajas, Campos Adicionales y Dual LDAP
+ * Versión Corregida con Info de Estado Actual
  */
 require_once '../core/db.php';
 require_once '../core/session.php';
@@ -18,7 +19,7 @@ $msg = "";
 $stmt_lugares = $pdo->query("SELECT * FROM lugares WHERE estado = 1 ORDER BY sede, nombre");
 $lugares = $stmt_lugares->fetchAll(PDO::FETCH_ASSOC);
 
-// 3. Buscar Equipo (Con validación de estado)
+// 3. Buscar Equipo (Con validación de estado e información actual)
 if (isset($_GET['buscar']) && !empty($_GET['criterio'])) {
     $criterio = trim($_GET['criterio']);
     
@@ -129,7 +130,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirmar'])) {
                 <div style="display:grid; grid-template-columns: 1fr 1fr;">
                     <div>
                         <span class="label-sm" style="color:var(--warning)">📍 Ubicación Actual:</span>
-                        <div class="data-val"><?= $equipo['sede_actual'] ?> - <?= $equipo['ubicacion_actual'] ?></div>
+                        <div class="data-val"><?= ($equipo['sede_actual'] ?? 'N/A') . " - " . ($equipo['ubicacion_actual'] ?? 'Sin Ubicación') ?></div>
                     </div>
                     <div>
                         <span class="label-sm" style="color:var(--warning)">👤 Responsable Actual:</span>
@@ -212,7 +213,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirmar'])) {
         </form>
 
         <script>
-            // Lógica de filtrado de lugares
             const lugaresData = <?= json_encode($lugares) ?>;
             function filtrarLugares() {
                 const sede = document.getElementById('selectSede').value;
@@ -225,7 +225,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirmar'])) {
                 sl.disabled = (filtrados.length === 0);
             }
 
-            // Lógica Unificada LDAP
             function verificarLDAP(tipo) {
                 const userId = document.getElementById('user_id_' + tipo).value;
                 const card = document.getElementById('userCard_' + tipo);
@@ -243,8 +242,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirmar'])) {
                         hiddenInput.value = data.correo;
                         card.style.display = 'block';
                         
-                        // Habilitar botón solo si el principal está OK
-                        if (tipo === 'p' || document.getElementById('correo_resp_real_p').value) {
+                        // Validar habilitación del botón
+                        const principalOK = document.getElementById('correo_resp_real_p').value !== "";
+                        if (principalOK) {
                             btnSubmit.disabled = false;
                             btnSubmit.style.opacity = "1";
                         }
@@ -252,10 +252,16 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirmar'])) {
                         alert("Usuario no localizado en LDAP");
                         card.style.display = 'none';
                         hiddenInput.value = "";
-                        if (tipo === 'p') btnSubmit.disabled = true;
+                        if (tipo === 'p') {
+                            btnSubmit.disabled = true;
+                            btnSubmit.style.opacity = "0.5";
+                        }
                     }
                 })
-                .catch(err => console.error("Error LDAP:", err));
+                .catch(err => {
+                    console.error("Error LDAP:", err);
+                    alert("Error al conectar con el servicio LDAP");
+                });
             }
         </script>
     <?php endif; ?>
