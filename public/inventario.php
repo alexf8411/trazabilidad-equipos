@@ -1,52 +1,44 @@
 <?php
-ob_start(); // 1. FIX REDIRECCIONES: Iniciar buffer para evitar error de headers
+ob_start(); // Previene errores de headers
 /**
  * public/inventario.php
- * Inventario General - Versión V1.7
- * Ajustes: 
- * - Muestra Vida Útil y Precio.
- * - Corrección de llave primaria (id_equipo).
- * - Protección contra bucles de redirección.
+ * Versión V1.8: Inventario Operativo (Sin financieros)
+ * Ajustes:
+ * - Se eliminaron columnas Precio y Vida Útil de la vista.
+ * - Se corrigió id -> id_equipo.
+ * - Se corrigió correo_responsable.
  */
 require_once '../core/db.php';
 require_once '../core/session.php';
 
-// 2. SEGURIDAD DE SESIÓN ROBUSTA
+// SEGURIDAD
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
-
 if (!isset($_SESSION['logged_in']) || $_SESSION['logged_in'] !== true) {
     header("Location: login.php");
     exit;
 }
 
-// 3. MENSAJES
+// MENSAJES
 $mensaje_sistema = "";
 if (isset($_GET['status'])) {
     $placa_msg = htmlspecialchars($_GET['p'] ?? 'Equipo');
-    
     if ($_GET['status'] == 'updated') {
-        $mensaje_sistema = "
-        <div style='background:#d4edda; color:#155724; padding:15px; border-radius:5px; margin-bottom:20px; border-left:5px solid #28a745;'>
-            ✅ <strong>Guardado:</strong> Datos actualizados para <u>$placa_msg</u>.
-        </div>";
+        $mensaje_sistema = "<div style='background:#d4edda; color:#155724; padding:15px; border-radius:5px; margin-bottom:20px; border-left:5px solid #28a745;'>✅ Datos actualizados para <u>$placa_msg</u>.</div>";
     }
     if ($_GET['status'] == 'reverted') {
-        $mensaje_sistema = "
-        <div style='background:#fff3cd; color:#856404; padding:15px; border-radius:5px; margin-bottom:20px; border-left:5px solid #ffc107;'>
-            ♻️ <strong>Baja Revertida:</strong> El equipo <u>$placa_msg</u> ha sido restaurado.
-        </div>";
+        $mensaje_sistema = "<div style='background:#fff3cd; color:#856404; padding:15px; border-radius:5px; margin-bottom:20px; border-left:5px solid #ffc107;'>♻️ Baja Revertida para <u>$placa_msg</u>.</div>";
     }
 }
 
-// --- PAGINACIÓN ---
+// PAGINACIÓN
 $registros_por_pagina = 20;
 $pagina_actual = isset($_GET['page']) ? (int)$_GET['page'] : 1;
 if ($pagina_actual < 1) $pagina_actual = 1;
 $offset = ($pagina_actual - 1) * $registros_por_pagina;
 
-// --- BÚSQUEDA ---
+// BÚSQUEDA
 $busqueda = isset($_GET['q']) ? trim($_GET['q']) : '';
 $filtro_sql = "";
 $params = [];
@@ -81,7 +73,7 @@ try {
     $total_paginas = ceil($total_registros / $registros_por_pagina);
     if ($total_paginas < 1) $total_paginas = 1;
 
-    // 2. Obtener datos (Usamos 'e.*' que ya trae precio y vida_util)
+    // 2. Obtener datos (QUERY CORREGIDA)
     $sql_data = "SELECT e.*, b.sede, b.ubicacion, b.tipo_evento, b.correo_responsable, b.hostname
                  FROM equipos e
                  LEFT JOIN (
@@ -113,7 +105,7 @@ try {
     <style>
         :root { --primary: #002D72; --secondary: #e7f1ff; --text: #333; --border: #e1e4e8; --bg: #f8f9fa; }
         body { font-family: 'Segoe UI', system-ui, sans-serif; background-color: var(--bg); color: var(--text); padding: 20px; margin: 0; }
-        .layout-container { max-width: 1500px; margin: 0 auto; background: white; padding: 25px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
+        .layout-container { max-width: 1400px; margin: 0 auto; background: white; padding: 25px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
         .top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 15px; }
         .page-title { margin: 0; color: var(--primary); border-left: 5px solid #ffc107; padding-left: 15px; }
         .search-form { display: flex; gap: 10px; flex-grow: 1; max-width: 500px; }
@@ -127,20 +119,14 @@ try {
         tbody tr:hover { background-color: var(--secondary); }
         td { padding: 10px 15px; vertical-align: middle; }
         .badge-modalidad { background: #eee; color: #555; border: 1px solid #ddd; padding: 4px 8px; border-radius: 4px; font-size: 0.75rem; }
-        
-        /* Estilos de Estado */
         .status-alta { color: #28a745; font-weight: bold; background: #d4edda; padding: 2px 8px; border-radius: 12px; font-size: 0.8rem; }
         .status-baja { color: #dc3545; font-weight: bold; background: #f8d7da; padding: 2px 8px; border-radius: 12px; font-size: 0.8rem; }
-
         .pagination { display: flex; justify-content: center; margin-top: 30px; gap: 5px; }
         .page-link { padding: 8px 12px; border: 1px solid var(--border); text-decoration: none; color: var(--primary); border-radius: 4px; }
         .page-link.active { background: var(--primary); color: white; }
-        
         .btn-icon { text-decoration: none; font-size: 1.1rem; padding: 5px; display: inline-block; }
         .btn-revert { color: #fff; background: #6c757d; font-size: 0.75rem; padding: 3px 8px; border-radius: 4px; text-decoration: none; margin-left: 5px; vertical-align: middle; }
-        
-        /* Nuevo estilo para financiero */
-        .money { font-family: monospace; color: #28a745; font-weight: bold; }
+        .btn-revert:hover { background: #5a6268; }
     </style>
 </head>
 <body>
@@ -148,7 +134,6 @@ try {
     <?= $mensaje_sistema ?>
 
 <div class="layout-container">
-    
     <div class="top-bar">
         <div>
             <h1 class="page-title">📦 Inventario General</h1>
@@ -177,7 +162,6 @@ try {
                     <th>Serial / Hostname</th>
                     <th>Equipo</th>
                     <th>Adquisición</th>
-                    <th>Financiero</th> 
                     <th>Ubicación</th>
                     <th>Responsable</th>
                     <th>Estado</th>
@@ -203,12 +187,6 @@ try {
                             <div style="font-size: 0.85rem;"><?= date('d/m/Y', strtotime($eq['fecha_compra'])) ?></div>
                             <span class="badge-modalidad"><?= $eq['modalidad'] ?></span>
                         </td>
-                        
-                        <td>
-                            <div class="money">$ <?= number_format($eq['precio'], 0, ',', '.') ?></div>
-                            <small style="color:#666;"><?= $eq['vida_util'] ?> Años Vida Útil</small>
-                        </td>
-
                         <td>
                             <?php if ($eq['ubicacion']): ?>
                                 <strong><?= htmlspecialchars($eq['sede']) ?></strong><br>
@@ -244,7 +222,7 @@ try {
                     </tr>
                     <?php endforeach; ?>
                 <?php else: ?>
-                    <tr><td colspan="9" class="empty-state" style="text-align:center; padding:20px;">No se encontraron resultados.</td></tr>
+                    <tr><td colspan="8" class="empty-state" style="text-align:center; padding:20px;">No se encontraron resultados.</td></tr>
                 <?php endif; ?>
             </tbody>
         </table>
@@ -255,15 +233,7 @@ try {
         <?php if ($pagina_actual > 1): ?>
             <a href="?page=<?= $pagina_actual - 1 ?>&q=<?= urlencode($busqueda) ?>" class="page-link">« Anterior</a>
         <?php endif; ?>
-
-        <?php for ($i = 1; $i <= $total_paginas; $i++): ?>
-            <?php if ($i == 1 || $i == $total_paginas || ($i >= $pagina_actual - 2 && $i <= $pagina_actual + 2)): ?>
-                <a href="?page=<?= $i ?>&q=<?= urlencode($busqueda) ?>" class="page-link <?= $i == $pagina_actual ? 'active' : '' ?>"><?= $i ?></a>
-            <?php elseif ($i == $pagina_actual - 3 || $i == $pagina_actual + 3): ?>
-                <span style="padding: 8px;">...</span>
-            <?php endif; ?>
-        <?php endfor; ?>
-
+        <span style="padding: 10px;">Página <?= $pagina_actual ?></span>
         <?php if ($pagina_actual < $total_paginas): ?>
             <a href="?page=<?= $pagina_actual + 1 ?>&q=<?= urlencode($busqueda) ?>" class="page-link">Siguiente »</a>
         <?php endif; ?>
@@ -272,6 +242,4 @@ try {
 </div>
 </body>
 </html>
-<?php 
-ob_end_flush(); 
-?>
+<?php ob_end_flush(); ?>
