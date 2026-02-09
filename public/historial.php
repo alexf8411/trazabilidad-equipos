@@ -1,8 +1,8 @@
 <?php
 /**
  * public/historial.php
- * Hoja de Vida y Trazabilidad del Activo - Versión V1.9
- * Actualización: Inclusión de campos Financieros (Vida Útil y Precio)
+ * Hoja de Vida y Trazabilidad del Activo - Versión V2.0
+ * Actualización: UI Limpia (Se ocultó ID interno de DB)
  */
 require_once '../core/db.php';
 require_once '../core/session.php';
@@ -49,7 +49,7 @@ try {
             background: white; padding: 20px; border-radius: 8px; 
             box-shadow: 0 2px 10px rgba(0,0,0,0.05); border-top: 5px solid var(--primary); 
             margin-bottom: 30px; 
-            display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); /* Responsivo */
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); 
             gap: 20px; 
         }
         .info-card h2 { grid-column: 1 / -1; margin: 0 0 10px 0; color: var(--primary); font-size: 1.4rem; border-bottom: 1px solid #eee; padding-bottom: 10px; }
@@ -107,6 +107,7 @@ try {
             <label>Valor del Activo</label> 
             <span class="money">$ <?= number_format($equipo['precio'], 0, ',', '.') ?> COP</span>
         </div>
+
         <div class="data-point">
             <label>Estado Actual</label> 
             <span class="<?= $equipo['estado_maestro'] == 'Alta' ? 'status-alta' : 'status-baja' ?>">
@@ -114,8 +115,7 @@ try {
             </span>
         </div>
         
-        <div class="data-point"><label>ID Interno</label> #<?= $equipo['id_equipo'] ?></div>
-    </div>
+        </div>
 
     <h3 style="color:#555; margin-left: 10px; border-bottom: 2px solid #ddd; padding-bottom: 10px;">🕒 Historial de Movimientos</h3>
     
