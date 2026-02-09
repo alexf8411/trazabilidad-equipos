@@ -1,30 +1,27 @@
 <?php
-ob_start(); // 1. INICIAR BUFFER: Previene errores de "Headers already sent"
+ob_start(); // 1. FIX REDIRECCIONES: Iniciar buffer para evitar error de headers
 /**
  * public/inventario.php
- * Inventario General con Opción de Reversión para Admin
- * Fix: Corrección de bucle de redirección (Session Loop)
+ * Inventario General - Versión V1.7
+ * Ajustes: 
+ * - Muestra Vida Útil y Precio.
+ * - Corrección de llave primaria (id_equipo).
+ * - Protección contra bucles de redirección.
  */
-
-// 2. ORDEN DE CARGA: Session debe ir antes que DB si DB tiene output
-require_once '../core/session.php';
 require_once '../core/db.php';
+require_once '../core/session.php';
 
-// 3. VERIFICACIÓN DEFENSIVA DE SESIÓN
-// Si core/session.php no inició la sesión por alguna razón, lo forzamos aquí.
+// 2. SEGURIDAD DE SESIÓN ROBUSTA
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
-// 4. SEGURIDAD ESTRICTA
-// Verificamos que logged_in exista Y sea true para evitar falsos positivos
-if (empty($_SESSION['logged_in']) || $_SESSION['logged_in'] !== true) {
-    // Si falla, redirigimos explícitamente al login y matamos el script
+if (!isset($_SESSION['logged_in']) || $_SESSION['logged_in'] !== true) {
     header("Location: login.php");
     exit;
 }
 
-// 5. DETECTOR DE MENSAJES DEL SISTEMA
+// 3. MENSAJES
 $mensaje_sistema = "";
 if (isset($_GET['status'])) {
     $placa_msg = htmlspecialchars($_GET['p'] ?? 'Equipo');
@@ -35,23 +32,21 @@ if (isset($_GET['status'])) {
             ✅ <strong>Guardado:</strong> Datos actualizados para <u>$placa_msg</u>.
         </div>";
     }
-    // MENSAJE PARA LA REVERSIÓN
     if ($_GET['status'] == 'reverted') {
         $mensaje_sistema = "
         <div style='background:#fff3cd; color:#856404; padding:15px; border-radius:5px; margin-bottom:20px; border-left:5px solid #ffc107;'>
-            ♻️ <strong>Baja Revertida:</strong> El equipo <u>$placa_msg</u> ha sido restaurado a 'Alta' y movido a Bodega. 
-            <br><small>Esta acción ha quedado registrada en la Auditoría Forense.</small>
+            ♻️ <strong>Baja Revertida:</strong> El equipo <u>$placa_msg</u> ha sido restaurado.
         </div>";
     }
 }
 
-// --- CONFIGURACIÓN DE PAGINACIÓN ---
+// --- PAGINACIÓN ---
 $registros_por_pagina = 20;
 $pagina_actual = isset($_GET['page']) ? (int)$_GET['page'] : 1;
 if ($pagina_actual < 1) $pagina_actual = 1;
 $offset = ($pagina_actual - 1) * $registros_por_pagina;
 
-// --- CONFIGURACIÓN DE BÚSQUEDA ---
+// --- BÚSQUEDA ---
 $busqueda = isset($_GET['q']) ? trim($_GET['q']) : '';
 $filtro_sql = "";
 $params = [];
@@ -84,11 +79,10 @@ try {
     $stmt_count->execute($params);
     $total_registros = $stmt_count->fetchColumn();
     $total_paginas = ceil($total_registros / $registros_por_pagina);
-    // Evitar división por cero o paginas negativas
     if ($total_paginas < 1) $total_paginas = 1;
 
-    // 2. Obtener datos
-    $sql_data = "SELECT e.*, b.sede, b.ubicacion, b.tipo_evento, b.correo_responsable, b.hostname, e.id as id_equipo
+    // 2. Obtener datos (Usamos 'e.*' que ya trae precio y vida_util)
+    $sql_data = "SELECT e.*, b.sede, b.ubicacion, b.tipo_evento, b.correo_responsable, b.hostname
                  FROM equipos e
                  LEFT JOIN (
                     SELECT b1.* FROM bitacora b1
@@ -119,7 +113,7 @@ try {
     <style>
         :root { --primary: #002D72; --secondary: #e7f1ff; --text: #333; --border: #e1e4e8; --bg: #f8f9fa; }
         body { font-family: 'Segoe UI', system-ui, sans-serif; background-color: var(--bg); color: var(--text); padding: 20px; margin: 0; }
-        .layout-container { max-width: 1400px; margin: 0 auto; background: white; padding: 25px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
+        .layout-container { max-width: 1500px; margin: 0 auto; background: white; padding: 25px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
         .top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 15px; }
         .page-title { margin: 0; color: var(--primary); border-left: 5px solid #ffc107; padding-left: 15px; }
         .search-form { display: flex; gap: 10px; flex-grow: 1; max-width: 500px; }
@@ -143,13 +137,10 @@ try {
         .page-link.active { background: var(--primary); color: white; }
         
         .btn-icon { text-decoration: none; font-size: 1.1rem; padding: 5px; display: inline-block; }
+        .btn-revert { color: #fff; background: #6c757d; font-size: 0.75rem; padding: 3px 8px; border-radius: 4px; text-decoration: none; margin-left: 5px; vertical-align: middle; }
         
-        /* Botón Revertir Exclusivo */
-        .btn-revert { 
-            color: #fff; background: #6c757d; font-size: 0.75rem; padding: 3px 8px; 
-            border-radius: 4px; text-decoration: none; margin-left: 5px; vertical-align: middle;
-        }
-        .btn-revert:hover { background: #5a6268; }
+        /* Nuevo estilo para financiero */
+        .money { font-family: monospace; color: #28a745; font-weight: bold; }
     </style>
 </head>
 <body>
@@ -184,9 +175,10 @@ try {
                 <tr>
                     <th>Placa UR</th>
                     <th>Serial / Hostname</th>
-                    <th>Equipo (Marca/Modelo)</th>
+                    <th>Equipo</th>
                     <th>Adquisición</th>
-                    <th>Ubicación Actual</th>
+                    <th>Financiero</th> 
+                    <th>Ubicación</th>
                     <th>Responsable</th>
                     <th>Estado</th>
                     <th style="text-align: center;">Acciones</th>
@@ -203,11 +195,20 @@ try {
                                 <small style="color: #666;">Host: <?= htmlspecialchars($eq['hostname']) ?></small>
                             <?php endif; ?>
                         </td>
-                        <td><?= htmlspecialchars($eq['marca']) ?> <span style="color:#666;"><?= htmlspecialchars($eq['modelo']) ?></span></td>
+                        <td>
+                            <?= htmlspecialchars($eq['marca']) ?>
+                            <div style="font-size:0.85rem; color:#666;"><?= htmlspecialchars($eq['modelo']) ?></div>
+                        </td>
                         <td>
                             <div style="font-size: 0.85rem;"><?= date('d/m/Y', strtotime($eq['fecha_compra'])) ?></div>
                             <span class="badge-modalidad"><?= $eq['modalidad'] ?></span>
                         </td>
+                        
+                        <td>
+                            <div class="money">$ <?= number_format($eq['precio'], 0, ',', '.') ?></div>
+                            <small style="color:#666;"><?= $eq['vida_util'] ?> Años Vida Útil</small>
+                        </td>
+
                         <td>
                             <?php if ($eq['ubicacion']): ?>
                                 <strong><?= htmlspecialchars($eq['sede']) ?></strong><br>
@@ -225,17 +226,17 @@ try {
                         </td>
                         
                         <td style="text-align: center; white-space: nowrap;">
-                            <a href="historial.php?serial=<?= $eq['serial'] ?>" class="btn-icon" title="Ver Trazabilidad">👁️</a>
+                            <a href="historial.php?serial=<?= $eq['serial'] ?>" class="btn-icon" title="Ver Hoja de Vida Completa">👁️</a>
                             
                             <?php if (in_array($_SESSION['rol'], ['Administrador', 'Recursos'])): ?>
-                                <a href="editar_equipo.php?id=<?= $eq['id_equipo'] ?? '' ?>" class="btn-icon" title="Editar" style="color: #d39e00;">✏️</a>
+                                <a href="editar_equipo.php?id=<?= $eq['id_equipo'] ?>" class="btn-icon" title="Editar" style="color: #d39e00;">✏️</a>
                             <?php endif; ?>
 
                             <?php if ($_SESSION['rol'] === 'Administrador' && $eq['estado_maestro'] === 'Baja'): ?>
                                 <a href="revertir_baja.php?serial=<?= $eq['serial'] ?>" 
                                    class="btn-revert" 
                                    title="Restaurar a estado Activo"
-                                   onclick="return confirm('⚠️ ¿Está seguro de revertir la BAJA de este equipo?\n\nEsta acción quedará registrada en la Auditoría Forense.');">
+                                   onclick="return confirm('⚠️ ¿Está seguro de revertir la BAJA?');">
                                    ♻️ Revertir
                                 </a>
                             <?php endif; ?>
@@ -243,7 +244,7 @@ try {
                     </tr>
                     <?php endforeach; ?>
                 <?php else: ?>
-                    <tr><td colspan="8" class="empty-state" style="text-align:center; padding: 20px;">No se encontraron resultados.</td></tr>
+                    <tr><td colspan="9" class="empty-state" style="text-align:center; padding:20px;">No se encontraron resultados.</td></tr>
                 <?php endif; ?>
             </tbody>
         </table>
@@ -272,5 +273,5 @@ try {
 </body>
 </html>
 <?php 
-ob_end_flush(); // Liberar buffer al final
+ob_end_flush(); 
 ?>
