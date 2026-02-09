@@ -18,7 +18,7 @@ $msg = "";
 $stmt_lugares = $pdo->query("SELECT * FROM lugares WHERE estado = 1 ORDER BY sede, nombre");
 $lugares = $stmt_lugares->fetchAll(PDO::FETCH_ASSOC);
 
-// 3. Buscar Equipo (Con validación de estado y Caja Naranja)
+// 3. Buscar Equipo (Validación de estado y Caja de Info Actual)
 if (isset($_GET['buscar']) && !empty($_GET['criterio'])) {
     $criterio = trim($_GET['criterio']);
     
@@ -40,7 +40,7 @@ if (isset($_GET['buscar']) && !empty($_GET['criterio'])) {
         $msg = "<div class='alert error'>❌ Equipo no localizado en inventario.</div>";
     } 
     elseif ($equipo['estado_maestro'] === 'Baja') {
-        $msg = "<div class='alert error'>🛑 <b>ACCESO DENEGADO:</b> El equipo se encuentra en estado de <b>BAJA</b>. No se permiten movimientos de activos retirados.</div>";
+        $msg = "<div class='alert error'>🛑 <b>ACCESO DENEGADO:</b> El equipo está en estado de <b>BAJA</b>.</div>";
         $equipo = null;
     }
 }
@@ -97,10 +97,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirmar'])) {
         .header { display: flex; justify-content: space-between; border-bottom: 2px solid var(--primary); padding-bottom: 15px; margin-bottom: 30px; }
         .search-section { display: flex; gap: 10px; margin-bottom: 30px; background: #f1f5f9; padding: 20px; border-radius: 8px; }
         input, select { padding: 12px; border: 1px solid #cbd5e1; border-radius: 6px; width: 100%; box-sizing: border-box; }
-        
         .info-pill { background: #f8fafc; padding: 20px; border-radius: 8px; margin-bottom: 25px; display: grid; grid-template-columns: 1fr 1fr; gap: 15px; border-left: 5px solid var(--primary); }
         .current-status-box { grid-column: span 2; background: #fff7ed; border: 1px solid #fed7aa; padding: 10px; border-radius: 6px; margin-top: 10px; }
-        
         .label-sm { display: block; font-size: 0.7rem; color: var(--text-secondary); text-transform: uppercase; font-weight: 700; margin-bottom: 5px; }
         .data-val { font-size: 0.95rem; font-weight: 600; color: #1e293b; }
         .btn-submit { background: var(--success); color: white; border: none; padding: 18px; border-radius: 8px; width: 100%; font-weight: 700; cursor: pointer; opacity: 0.5; margin-top: 25px; }
@@ -118,7 +116,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirmar'])) {
     <?= $msg ?>
 
     <form method="GET" class="search-section">
-        <input type="text" name="criterio" placeholder="Escanee Placa UR o Serial..." value="<?= htmlspecialchars($_GET['criterio'] ?? '') ?>" required autofocus>
+        <input type="text" name="criterio" placeholder="Placa UR o Serial..." value="<?= htmlspecialchars($_GET['criterio'] ?? '') ?>" required autofocus>
         <button type="submit" name="buscar" style="background:var(--primary); color:white; border:none; padding:10px 20px; border-radius:6px; cursor:pointer; font-weight:bold;">BUSCAR</button>
     </form>
 
