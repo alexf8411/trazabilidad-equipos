@@ -23,8 +23,7 @@ function verificarUsuarioOpcional() {
     lblNombre.innerText = "Consultando...";
     lblInfo.innerText = "Buscando en Directorio Activo...";
 
-    //fetch('api_ldap.php?usuario=' + encodeURIComponent(usuarioLimpio))
-    fetch('../api_ldap.php?usuario=' + encodeURIComponent(usuarioLimpio))
+    fetch('api_ldap.php?usuario=' + encodeURIComponent(usuarioLimpio))
         .then(response => {
             if (!response.ok) throw new Error('Error de red');
             return response.json();
