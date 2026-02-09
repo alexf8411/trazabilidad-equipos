@@ -196,7 +196,7 @@ if (isset($_GET['status']) && $_GET['status'] == 'success') {
                 </div>
 
                 <div class="full-width info-box">
-                    ℹ️ <strong>Nota:</strong> La Placa UR y el Hostname se asignarán automáticamente usando el Serial.
+                    ℹ️ <strong>Nota:</strong> La Placa UR y el Hostname se asignan automáticamente; el equipo ingresará a <strong>Bodega de Tecnología</strong>.
                 </div>
                 
                 <div class="full-width">
