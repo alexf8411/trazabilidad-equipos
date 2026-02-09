@@ -1,67 +1,51 @@
 <?php
 /**
  * public/importar_csv.php
- * Importación masiva - Versión V1.4 (Sincronizada con Alta Individual)
- * Ajustes:
- * - Placa y Hostname = Serial
- * - Nuevas columnas: Vida Útil y Precio
+ * Importación masiva con detector de duplicados amigable y lógica sincronizada
  */
 require_once '../core/db.php';
 require_once '../core/session.php';
 
-// 1. CONFIGURACIÓN
+// 1. CONFIGURACIÓN DE PODER (Aprovechando tus 7GB RAM)
 set_time_limit(600); 
 ini_set('memory_limit', '2G'); 
 
 if (!in_array($_SESSION['rol'], ['Administrador', 'Recursos'])) {
-    header('Location: dashboard.php');
-    exit;
+    die("No tienes permisos para esta acción.");
 }
 
 /**
  * Función para procesar cada fila del CSV
+ * Sincronizada con la lógica de alta_equipos.php
  */
 function procesarFila($data, $stmt_eq, $stmt_bit, $bodega, &$exitos) {
-    // Validar que vengan al menos las columnas requeridas (ahora son 7)
-    if (count($data) < 7) return;
+    if (count($data) < 2 || empty($data[0]) || empty($data[1])) return;
 
-    // Mapeo de columnas según el nuevo formato CSV
-    // 0: Serial | 1: Marca | 2: Modelo | 3: Vida Útil | 4: Precio | 5: Fecha | 6: Modalidad
-    
-    $serial    = strtoupper(trim($data[0])); // Columna 1 del CSV
-    $marca     = trim($data[1]);
-    $modelo    = trim($data[2]);
-    $vida_util = (int) trim($data[3]);
-    $precio    = (float) trim($data[4]);
-    $raw_fecha = trim($data[5]);
-    $modalidad = trim($data[6]);
-    
-    // LÓGICA DE NEGOCIO: Placa = Serial
-    $placa = $serial;
-    
+    // Limpieza y Normalización
+    $placa     = strtoupper(trim($data[0]));
+    $serial    = strtoupper(trim($data[1]));
+    $marca     = trim($data[2]);
+    $modelo    = trim($data[3]);
+    $raw_fecha = trim($data[4]);
+    $modalidad = trim($data[5]);
     $fecha_evento = date('Y-m-d H:i:s');
 
-    // Normalización de Fecha (DD/MM/AAAA a YYYY-MM-DD)
+    // Escudo de Fechas (DD/MM/AAAA a YYYY-MM-DD)
     $fecha_normalizada = str_replace(['/', '.'], '-', $raw_fecha);
     $timestamp = strtotime($fecha_normalizada);
     $fecha_compra = ($timestamp) ? date('Y-m-d', $timestamp) : date('Y-m-d');
 
-    // 1. Insertar en Equipos (Con los nuevos campos)
-    $stmt_eq->execute([
-        $placa, $serial, $marca, $modelo, 
-        $vida_util, $precio, 
-        $fecha_compra, $modalidad
-    ]);
+    // 1. Insertar en tabla Equipos
+    $stmt_eq->execute([$placa, $serial, $marca, $modelo, $fecha_compra, $modalidad]);
     
-    // 2. Insertar en Bitácora (Hostname = Serial)
+    // 2. Insertar en tabla Bitácora (Sincronizado con carga individual)
     $stmt_bit->execute([
         $serial, 
         $bodega['id'], 
         $bodega['sede'], 
         $bodega['nombre'], 
         $fecha_evento, 
-        $_SESSION['nombre'],
-        $serial // Hostname igual al serial
+        $_SESSION['nombre']
     ]);
     
     $exitos++;
@@ -78,7 +62,7 @@ if (isset($_POST['importar'])) {
         $errores[] = "Por favor, selecciona un archivo CSV.";
     } else {
         try {
-            // A. LOCALIZAR BODEGA
+            // A. LOCALIZAR BODEGA (Debe existir en la tabla lugares)
             $stmt_bodega = $pdo->prepare("SELECT id, sede, nombre FROM lugares WHERE nombre = 'Bodega de Tecnología' LIMIT 1");
             $stmt_bodega->execute();
             $bodega = $stmt_bodega->fetch(PDO::FETCH_ASSOC);
@@ -90,27 +74,16 @@ if (isset($_POST['importar'])) {
             $handle = fopen($archivo, "r");
             $pdo->beginTransaction();
 
-            // Preparar Consultas (Actualizadas)
-            $stmt_eq = $pdo->prepare("INSERT INTO equipos (
-                                        placa_ur, serial, marca, modelo, 
-                                        vida_util, precio, 
-                                        fecha_compra, modalidad, estado_maestro
-                                      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Alta')");
-            
-            $stmt_bit = $pdo->prepare("INSERT INTO bitacora (
-                                        serial_equipo, id_lugar, sede, ubicacion, 
-                                        tipo_evento, correo_responsable, fecha_evento, 
-                                        tecnico_responsable, hostname
-                                       ) VALUES (?, ?, ?, ?, 'Ingreso', 'Bodega de TI', ?, ?, ?)");
+            // Preparar Consultas
+            $stmt_eq = $pdo->prepare("INSERT INTO equipos (placa_ur, serial, marca, modelo, fecha_compra, modalidad, estado_maestro) VALUES (?, ?, ?, ?, ?, ?, 'Alta')");
+            $stmt_bit = $pdo->prepare("INSERT INTO bitacora (serial_equipo, id_lugar, sede, ubicacion, tipo_evento, correo_responsable, fecha_evento, tecnico_responsable, hostname) VALUES (?, ?, ?, ?, 'Ingreso', 'Bodega de TI', ?, ?, 'PENDIENTE')");
 
             // --- DETECTOR INTELIGENTE DE ENCABEZADOS ---
             $primera_fila = fgetcsv($handle, 1000, ",");
             if ($primera_fila) {
                 $check = strtolower(trim($primera_fila[0]));
-                // Palabras clave típicas de encabezado
-                $palabras_clave = ['serial', 'sn', 'marca', 'modelo', 'vida', 'precio'];
+                $palabras_clave = ['placa', 'id', 'ur', 'placa_ur', 'equipo', 'codigo'];
                 
-                // Si NO parece un encabezado, procesarlo como dato
                 if (!in_array($check, $palabras_clave)) {
                     procesarFila($primera_fila, $stmt_eq, $stmt_bit, $bodega, $exitos);
                 }
@@ -129,12 +102,11 @@ if (isset($_POST['importar'])) {
             if ($pdo->inTransaction()) $pdo->rollBack();
             
             if ($e->getCode() == '23000') {
-                // Extracción más limpia del valor duplicado
                 preg_match("/Duplicate entry '(.*)' for key/", $e->getMessage(), $matches);
                 $valor = $matches[1] ?? "desconocido";
-                $errores[] = "⚠️ <b>Error de Duplicado:</b> El Serial <b>'$valor'</b> ya existe en el sistema. <br>Se canceló TODA la carga para mantener la integridad.";
+                $errores[] = "⚠️ <b>Error de Duplicado:</b> El equipo con placa o serial <b>'$valor'</b> ya existe en la base de datos. Se canceló la carga para evitar errores.";
             } else {
-                $errores[] = "❌ Error SQL: " . $e->getMessage();
+                $errores[] = "❌ Error de Base de Datos: " . $e->getMessage();
             }
         } catch (Exception $e) {
             if ($pdo->inTransaction()) $pdo->rollBack();
@@ -151,19 +123,18 @@ if (isset($_POST['importar'])) {
     <title>Importar Equipos - URTRACK</title>
     <style>
         :root { --primary: #002D72; --bg: #f4f6f9; --warning: #ffc107; }
-        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); padding: 40px; color: #333; }
-        .import-card { max-width: 900px; margin: 0 auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); }
+        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); padding: 40px; }
+        .import-card { max-width: 750px; margin: 0 auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); }
         .instruction-box { background: #fff8e1; border: 2px solid var(--warning); padding: 20px; border-radius: 8px; margin-bottom: 25px; }
         .csv-table { width: 100%; border-collapse: collapse; margin: 15px 0; font-size: 0.85rem; }
         .csv-table th { background: #eee; border: 1px solid #ccc; padding: 8px; text-align: left; }
         .csv-table td { border: 1px solid #ccc; padding: 8px; }
         .date-alert { background: #d1ecf1; color: #0c5460; padding: 10px; border-radius: 5px; border-left: 5px solid #17a2b8; margin-top: 10px; font-weight: bold; }
-        .alert { padding: 15px; border-radius: 5px; margin-bottom: 20px; }
+        .alert { padding: 15px; border-radius: 5px; margin-bottom: 20px; font-weight: 500; }
         .alert-error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
         .alert-success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
         input[type="file"] { margin: 20px 0; display: block; width: 100%; padding: 15px; background: #f8f9fa; border: 2px dashed var(--primary); border-radius: 8px; cursor: pointer; }
         .btn-import { background: var(--primary); color: white; border: none; padding: 16px 25px; border-radius: 6px; cursor: pointer; width: 100%; font-size: 1.1rem; font-weight: bold; }
-        .btn-import:hover { background: #001f52; }
         .btn-secondary { display: block; text-align: center; text-decoration: none; color: var(--primary); padding: 10px; margin-top: 20px; font-weight: 500; }
     </style>
 </head>
@@ -181,36 +152,24 @@ if (isset($_POST['importar'])) {
     <?php endforeach; ?>
 
     <div class="instruction-box">
-        <h3 style="margin-top:0; color: #856404;">⚠️ ESTRUCTURA OBLIGATORIA DEL CSV</h3>
-        <p>El archivo debe tener exactamente estas <strong>7 columnas</strong> en orden (sin encabezados obligatorios, pero recomendado):</p>
+        <h3 style="margin-top:0; color: #856404;">⚠️ ¡LEER ANTES DE SUBIR!</h3>
+        <p>El archivo debe ser <strong>CSV (delimitado por comas)</strong> con estas 6 columnas:</p>
         
         <table class="csv-table">
             <thead>
                 <tr>
-                    <th>1. Serial</th>
-                    <th>2. Marca</th>
-                    <th>3. Modelo</th>
-                    <th>4. Vida Útil</th>
-                    <th>5. Precio</th>
-                    <th>6. Fecha</th>
-                    <th>7. Modalidad</th>
+                    <th>1. Placa</th><th>2. Serial</th><th>3. Marca</th><th>4. Modelo</th><th>5. Fecha</th><th>6. Modalidad</th>
                 </tr>
             </thead>
             <tbody>
                 <tr>
-                    <td>SN882233</td>
-                    <td>HP</td>
-                    <td>ProBook 440</td>
-                    <td>5</td>
-                    <td>4500000</td>
-                    <td>25/10/2023</td>
-                    <td>Leasing</td>
+                    <td>UR-1001</td><td>SN882233</td><td>HP</td><td>ProBook 440</td><td>25/10/2023</td><td>Leasing</td>
                 </tr>
             </tbody>
         </table>
 
         <div class="date-alert">
-            ℹ️ <strong>Nota:</strong> La Placa UR y el Hostname se generarán automáticamente iguales al Serial.
+            📅 FORMATO DE FECHA: Use DIA/MES/AÑO (Ejemplo: 31/12/2025).
         </div>
     </div>
 
