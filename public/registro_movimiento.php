@@ -1,12 +1,11 @@
 <?php
 /**
  * public/registro_movimiento.php
- * Versión Consolidada: Protección de Bajas, Campos Adicionales y Dual LDAP
+ * Versión Consolidada V3.5: Dual LDAP independiente
  */
 require_once '../core/db.php';
 require_once '../core/session.php';
 
-// 1. Seguridad RBAC
 if (!in_array($_SESSION['rol'], ['Administrador', 'Recursos', 'Soporte'])) {
     header('Location: dashboard.php'); exit;
 }
@@ -14,75 +13,55 @@ if (!in_array($_SESSION['rol'], ['Administrador', 'Recursos', 'Soporte'])) {
 $equipo = null;
 $msg = "";
 
-// 2. Cargar Catálogo de Lugares
 $stmt_lugares = $pdo->query("SELECT * FROM lugares WHERE estado = 1 ORDER BY sede, nombre");
 $lugares = $stmt_lugares->fetchAll(PDO::FETCH_ASSOC);
 
-// 3. Buscar Equipo (Con validación de estado y la caja naranja original)
 if (isset($_GET['buscar']) && !empty($_GET['criterio'])) {
     $criterio = trim($_GET['criterio']);
-    
-    $sql_buscar = "SELECT e.*, 
-                   b.correo_responsable AS responsable_actual, 
-                   b.ubicacion AS ubicacion_actual, 
-                   b.sede AS sede_actual
+    $sql_buscar = "SELECT e.*, b.correo_responsable AS responsable_actual, b.ubicacion AS ubicacion_actual, b.sede AS sede_actual
                    FROM equipos e
                    LEFT JOIN bitacora b ON e.serial = b.serial_equipo 
                    AND b.id_evento = (SELECT MAX(id_evento) FROM bitacora WHERE serial_equipo = e.serial)
-                   WHERE e.placa_ur = ? OR e.serial = ? 
-                   LIMIT 1";
-                   
+                   WHERE e.placa_ur = ? OR e.serial = ? LIMIT 1";
     $stmt = $pdo->prepare($sql_buscar);
     $stmt->execute([$criterio, $criterio]);
     $equipo = $stmt->fetch(PDO::FETCH_ASSOC);
     
-    if (!$equipo) {
-        $msg = "<div class='alert error'>❌ Equipo no localizado en inventario.</div>";
-    } 
-    // REGLA: No asignar equipos de BAJA
+    if (!$equipo) $msg = "<div class='alert error'>❌ Equipo no localizado en inventario.</div>";
     elseif ($equipo['estado_maestro'] === 'Baja') {
-        $msg = "<div class='alert error'>🛑 <b>ACCESO DENEGADO:</b> El equipo está en estado de <b>BAJA</b>. No se permiten movimientos.</div>";
+        $msg = "<div class='alert error'>🛑 <b>ACCESO DENEGADO:</b> Equipo en estado de <b>BAJA</b>.</div>";
         $equipo = null;
     }
 }
 
-// 4. Procesar Asignación
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirmar'])) {
     try {
         $pdo->beginTransaction();
-        
         $stmt_l = $pdo->prepare("SELECT sede, nombre FROM lugares WHERE id = ?");
         $stmt_l->execute([$_POST['id_lugar']]);
         $l = $stmt_l->fetch();
 
         $sql = "INSERT INTO bitacora (
-                    serial_equipo, id_lugar, sede, ubicacion, 
-                    campo_adic1, campo_adic2,
+                    serial_equipo, id_lugar, sede, ubicacion, campo_adic1, campo_adic2,
                     tipo_evento, correo_responsable, responsable_secundario, tecnico_responsable, 
                     hostname, fecha_evento
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())";
         
         $pdo->prepare($sql)->execute([
-            $_POST['serial'], 
-            $_POST['id_lugar'], 
-            $l['sede'], 
-            $l['nombre'],
-            $_POST['campo_adic1'], 
-            $_POST['campo_adic2'],
+            $_POST['serial'], $_POST['id_lugar'], $l['sede'], $l['nombre'],
+            $_POST['campo_adic1'], $_POST['campo_adic2'],
             $_POST['tipo_evento'], 
-            $_POST['correo_resp_real'], // Responsable Principal
-            $_POST['correo_sec_real'] ?: null, // Responsable Secundario (Opcional)
-            $_SESSION['nombre'], 
-            strtoupper($_POST['hostname'])
+            $_POST['correo_resp_real'], // Principal (ID original)
+            $_POST['correo_sec_real'] ?: null, // Secundario
+            $_SESSION['nombre'], strtoupper($_POST['hostname'])
         ]);
 
         $pdo->commit();
         header("Location: generar_acta.php?serial=" . $_POST['serial']);
         exit;
-        
     } catch (Exception $e) {
         if ($pdo->inTransaction()) $pdo->rollBack();
-        $msg = "<div class='alert error'>Error al guardar: " . $e->getMessage() . "</div>";
+        $msg = "<div class='alert error'>Error: " . $e->getMessage() . "</div>";
     }
 }
 ?>
@@ -112,10 +91,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirmar'])) {
 <body>
 
 <div class="card">
-    <div class="header">
-        <h2>🚚 Asignación y Traslados</h2>
-        <a href="dashboard.php" style="text-decoration:none; color:gray;">⬅ Volver</a>
-    </div>
+    <div class="header"><h2>🚚 Asignación y Traslados</h2><a href="dashboard.php" style="text-decoration:none; color:gray;">⬅ Volver</a></div>
 
     <?= $msg ?>
 
@@ -128,17 +104,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirmar'])) {
         <div class="info-pill">
             <div><span class="label-sm">Equipo</span><div class="data-val"><?= $equipo['marca'] ?> <?= $equipo['modelo'] ?></div></div>
             <div><span class="label-sm">Identificación</span><div class="data-val">Placa: <?= $equipo['placa_ur'] ?> | SN: <?= $equipo['serial'] ?></div></div>
-            
             <div class="current-status-box">
                 <div style="display:grid; grid-template-columns: 1fr 1fr;">
-                    <div>
-                        <span class="label-sm" style="color:var(--warning)">📍 Ubicación Actual:</span>
-                        <div class="data-val"><?= $equipo['sede_actual'] ?> - <?= $equipo['ubicacion_actual'] ?></div>
-                    </div>
-                    <div>
-                        <span class="label-sm" style="color:var(--warning)">👤 Responsable Actual:</span>
-                        <div class="data-val"><?= $equipo['responsable_actual'] ?? 'Sin asignar (Bodega)' ?></div>
-                    </div>
+                    <div><span class="label-sm" style="color:var(--warning)">📍 Ubicación Actual:</span><div class="data-val"><?= $equipo['sede_actual'] ?> - <?= $equipo['ubicacion_actual'] ?></div></div>
+                    <div><span class="label-sm" style="color:var(--warning)">👤 Responsable Actual:</span><div class="data-val"><?= $equipo['responsable_actual'] ?? 'Sin asignar (Bodega)' ?></div></div>
                 </div>
             </div>
         </div>
@@ -147,31 +116,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirmar'])) {
             <input type="hidden" name="serial" value="<?= $equipo['serial'] ?>">
             <input type="hidden" name="correo_resp_real" id="correo_resp_real"> <input type="hidden" name="correo_sec_real" id="correo_sec_real">   <div style="display:grid; grid-template-columns: 1fr 1fr; gap:20px;">
                 <div><label class="label-sm">Nuevo Hostname</label><input type="text" name="hostname" required placeholder="Ej: PB-ADM-L01"></div>
-                <div>
-                    <label class="label-sm">Tipo de Movimiento</label>
-                    <select name="tipo_evento">
-                        <option value="Asignación">Asignación (Entrega)</option>
-                        <option value="Devolución">Devolución a Bodega</option>
-                    </select>
-                </div>
-                
-                <div>
-                    <label class="label-sm">Sede Destino</label>
-                    <select id="selectSede" required onchange="filtrarLugares()">
-                        <option value="">-- Seleccionar Sede --</option>
-                        <?php 
-                        $sedes = array_unique(array_column($lugares, 'sede')); 
-                        foreach($sedes as $s) echo "<option value='$s'>$s</option>"; 
-                        ?>
-                    </select>
-                </div>
-                <div>
-                    <label class="label-sm">Ubicación / Edificio Destino</label>
-                    <select id="selectLugar" name="id_lugar" required disabled><option value="">-- Primero elija Sede --</option></select>
-                </div>
-
-                <div><label class="label-sm">Campo Adicional 1</label><input type="text" name="campo_adic1" placeholder="Info extra 1..."></div>
-                <div><label class="label-sm">Campo Adicional 2</label><input type="text" name="campo_adic2" placeholder="Info extra 2..."></div>
+                <div><label class="label-sm">Tipo de Movimiento</label><select name="tipo_evento"><option value="Asignación">Asignación</option><option value="Devolución">Devolución</option></select></div>
+                <div><label class="label-sm">Sede Destino</label><select id="selectSede" required onchange="filtrarLugares()"><option value="">-- Seleccionar --</option><?php $sedes = array_unique(array_column($lugares, 'sede')); foreach($sedes as $s) echo "<option value='$s'>$s</option>"; ?></select></div>
+                <div><label class="label-sm">Ubicación Destino</label><select id="selectLugar" name="id_lugar" required disabled><option value="">-- Elija Sede --</option></select></div>
+                <div><label class="label-sm">Campo Adicional 1</label><input type="text" name="campo_adic1" placeholder="Info 1"></div>
+                <div><label class="label-sm">Campo Adicional 2</label><input type="text" name="campo_adic2" placeholder="Info 2"></div>
 
                 <div class="ldap-group" style="grid-column: span 2;">
                     <label class="label-sm">👤 Responsable Principal (LDAP)</label>
@@ -189,10 +138,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirmar'])) {
                     <label class="label-sm">👥 Responsable Secundario (LDAP - Opcional)</label>
                     <div style="display:flex; gap:10px;">
                         <input type="text" id="user_id_sec" placeholder="nombre.apellido">
-                        <button type="button" onclick="verificarUsuarioSecundario()" style="white-space:nowrap; background:#64748b; color:white; border:none; padding:0 15px; border-radius:6px; cursor:pointer;">🔍 Verificar</button>
+                        <button type="button" onclick="verificarSecundario()" style="white-space:nowrap; background:#64748b; color:white; border:none; padding:0 15px; border-radius:6px; cursor:pointer;">🔍 Verificar Secundario</button>
                     </div>
                     <div id="userCard_sec" class="user-card">
-                        <h4 id="ldap_nombre_sec" style="margin:0; color:var(--text-secondary);"></h4>
+                        <h4 id="ldap_nombre_sec" style="margin:0; color:#444;"></h4>
                         <div id="ldap_info_sec" style="font-size:0.85rem;"></div>
                     </div>
                 </div>
@@ -202,28 +151,20 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirmar'])) {
         </form>
 
         <script>
-            // Lógica de filtrado
             const lugaresData = <?= json_encode($lugares) ?>;
             function filtrarLugares() {
                 const sede = document.getElementById('selectSede').value;
                 const sl = document.getElementById('selectLugar');
-                sl.innerHTML = '<option value="">-- Seleccionar Ubicación --</option>';
-                lugaresData.filter(l => l.sede === sede).forEach(l => { 
-                    sl.innerHTML += `<option value="${l.id}">${l.nombre}</option>`; 
-                });
+                sl.innerHTML = '<option value="">-- Seleccionar --</option>';
+                lugaresData.filter(l => l.sede === sede).forEach(l => { sl.innerHTML += `<option value="${l.id}">${l.nombre}</option>`; });
                 sl.disabled = false;
             }
 
-            /**
-             * FUNCIÓN PARA EL RESPONSABLE SECUNDARIO
-             * Basada en tu lógica original de verificar_ldap.js pero adaptada a los IDs secundarios
-             */
-            function verificarUsuarioSecundario() {
+            function verificarSecundario() {
                 const user = document.getElementById('user_id_sec').value;
                 const card = document.getElementById('userCard_sec');
-                if(!user) return alert("Ingrese un usuario");
+                if(!user) return alert("Ingrese usuario");
 
-                // Llamamos a tu mismo bridge api_ldap.php
                 fetch(`api_ldap.php?user=${user}`)
                 .then(r => r.json())
                 .then(data => {
@@ -233,7 +174,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirmar'])) {
                         document.getElementById('correo_sec_real').value = data.correo;
                         card.style.display = 'block';
                     } else {
-                        alert("Usuario secundario no localizado en LDAP");
+                        alert("Usuario secundario no encontrado");
                         card.style.display = 'none';
                         document.getElementById('correo_sec_real').value = "";
                     }
