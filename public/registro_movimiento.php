@@ -1,7 +1,7 @@
 <?php
 /**
  * public/registro_movimiento.php
- * Módulo de Asignación de Activos con Validación de Estado y Campos Adicionales
+ * Módulo de Asignación con Bloqueo de Bajas y Responsable Secundario
  */
 require_once '../core/db.php';
 require_once '../core/session.php';
@@ -39,10 +39,10 @@ if (isset($_GET['buscar']) && !empty($_GET['criterio'])) {
     if (!$equipo) {
         $msg = "<div class='alert error'>❌ Equipo no localizado en inventario.</div>";
     } 
-    // VALIDACIÓN CRÍTICA: Bloqueo de equipos dados de baja
+    // REGLA DE NEGOCIO: Bloqueo de equipos dados de baja
     elseif ($equipo['estado_maestro'] === 'Baja') {
-        $msg = "<div class='alert error'>🛑 <b>ACCESO DENEGADO:</b> El equipo con placa <b>{$equipo['placa_ur']}</b> está en estado de <b>BAJA</b>. No se permiten movimientos de activos retirados.</div>";
-        $equipo = null; // Impedimos que se cargue el formulario
+        $msg = "<div class='alert error'>🛑 <b>ACCESO DENEGADO:</b> El equipo con placa <b>{$equipo['placa_ur']}</b> se encuentra en estado de <b>BAJA</b>. Un activo retirado no puede ser asignado ni trasladado.</div>";
+        $equipo = null; // Destruimos la variable para que no cargue el formulario
     }
 }
 
@@ -55,24 +55,29 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirmar'])) {
         $stmt_l->execute([$_POST['id_lugar']]);
         $l = $stmt_l->fetch();
 
-        // Query actualizada con campo_adic1 y campo_adic2
+        // Query con campos adicionales y responsable secundario
         $sql = "INSERT INTO bitacora (
                     serial_equipo, id_lugar, sede, ubicacion, 
                     campo_adic1, campo_adic2,
-                    tipo_evento, correo_responsable, tecnico_responsable, 
+                    tipo_evento, correo_responsable, responsable_secundario, tecnico_responsable, 
                     hostname, fecha_evento
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())";
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())";
         
         $stmt = $pdo->prepare($sql);
+        
+        // El responsable secundario se guarda como NULL si llega vacío
+        $resp_sec = !empty($_POST['responsable_secundario']) ? trim($_POST['responsable_secundario']) : null;
+
         $stmt->execute([
             $_POST['serial'], 
             $_POST['id_lugar'], 
             $l['sede'], 
             $l['nombre'],
-            $_POST['campo_adic1'], // Nuevo
-            $_POST['campo_adic2'], // Nuevo
+            $_POST['campo_adic1'],
+            $_POST['campo_adic2'],
             $_POST['tipo_evento'], 
             $_POST['correo_resp_real'], 
+            $resp_sec, // Responsable Secundario
             $_SESSION['nombre'], 
             strtoupper($_POST['hostname'])
         ]);
@@ -189,7 +194,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirmar'])) {
                 </div>
 
                 <div style="grid-column: span 2;">
-                    <label class="label-sm">Nuevo Responsable (LDAP)</label>
+                    <label class="label-sm">Responsable Secundario (Opcional)</label>
+                    <input type="text" name="responsable_secundario" placeholder="Nombre o correo del responsable secundario...">
+                    <small style="color: #999;">ℹ️ Si se deja vacío, se eliminará cualquier responsable secundario previo.</small>
+                </div>
+
+                <div style="grid-column: span 2;">
+                    <label class="label-sm">Nuevo Responsable Principal (LDAP)</label>
                     <div style="display:flex; gap:10px;">
                         <input type="text" id="user_id" placeholder="nombre.apellido">
                         <button type="button" onclick="verificarUsuario()" style="white-space:nowrap; background:var(--primary); color:white; border:none; padding:0 15px; border-radius:6px; cursor:pointer;">🔍 Verificar</button>
