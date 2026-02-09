@@ -1,8 +1,8 @@
 <?php
 /**
  * public/generar_acta_baja.php
- * Visor de Acta de Baja Masiva + Envío de Correo
- * BASADO EXACTAMENTE EN EL DISEÑO DE GENERAR_ACTA.PHP
+ * Visor de Acta de Baja Masiva (Sin Precios)
+ * Versión Final corregida
  */
 require_once '../core/db.php';
 require_once '../core/session.php';
@@ -12,7 +12,7 @@ require_once '../vendor/autoload.php';
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
 
-// 1. VALIDACIÓN DE SESIÓN (Diferencia: Aquí leemos la sesión del lote, no un GET serial)
+// 1. VALIDACIÓN DE SESIÓN
 if (empty($_SESSION['acta_baja_seriales'])) {
     die("<div style='color:white; background:#333; padding:20px; text-align:center; font-family:sans-serif;'>
             <h3>⛔ No hay un lote de bajas activo.</h3>
@@ -26,20 +26,20 @@ $lote = $_SESSION['acta_baja_lote'];
 $tecnico = $_SESSION['nombre'];
 $action = $_GET['action'] ?? 'view';
 
-// 2. OBTENER DATOS (Diferencia: Consulta masiva con IN)
+// 2. OBTENER DATOS (Sin columna precio)
 $placeholders = str_repeat('?,', count($seriales) - 1) . '?';
-$stmt = $pdo->prepare("SELECT placa_ur, serial, marca, modelo, precio FROM equipos WHERE serial IN ($placeholders)");
+$stmt = $pdo->prepare("SELECT placa_ur, serial, marca, modelo FROM equipos WHERE serial IN ($placeholders)");
 $stmt->execute($seriales);
 $equipos = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-// 3. CLASE PDF (Idéntica estructura a tu archivo original)
+// 3. CLASE PDF
 class PDF extends \FPDF {
     function Header() {
         if(file_exists('img/logo_ur.png')) { 
             $this->Image('img/logo_ur.png', 10, 8, 33);
         }
         $this->SetFont('Arial', 'B', 14);
-        $this->Cell(0, 10, utf8_decode('ACTA DE BAJA Y DISPOSICIÓN FINAL'), 0, 0, 'C'); // Cambio de Título
+        $this->Cell(0, 10, utf8_decode('ACTA DE BAJA Y DISPOSICIÓN FINAL'), 0, 0, 'C');
         $this->Ln(20);
     }
     function Footer() {
@@ -49,7 +49,7 @@ class PDF extends \FPDF {
     }
 }
 
-// 4. FUNCIÓN CONSTRUCTORA (Adaptada para Tabla de Bajas)
+// 4. FUNCIÓN CONSTRUCTORA
 function construirPDF($lote, $motivo, $tecnico, $equipos) {
     $pdf = new PDF();
     $pdf->AddPage();
@@ -74,44 +74,44 @@ function construirPDF($lote, $motivo, $tecnico, $equipos) {
     $pdf->Cell(155, 8, utf8_decode($motivo), 1, 1);
     $pdf->Ln(5);
 
-    // Bloque 2: Tabla de Equipos (Diferencia: Loop foreach)
+    // Bloque 2: Tabla de Equipos (SIN PRECIOS)
     $pdf->SetFont('Arial', 'B', 10);
     $pdf->Cell(0, 8, utf8_decode('LISTADO DE ACTIVOS (' . count($equipos) . ' Unidades)'), 1, 1, 'L', true);
     
-    // Encabezados de tabla
+    // Encabezados de tabla (Anchos ajustados: 40+50+100 = 190mm)
     $pdf->SetFillColor(220, 53, 69); // Rojo para Bajas
     $pdf->SetTextColor(255);
-    $pdf->Cell(30, 7, 'Placa', 1, 0, 'C', true);
-    $pdf->Cell(40, 7, 'Serial', 1, 0, 'C', true);
-    $pdf->Cell(80, 7, 'Marca / Modelo', 1, 0, 'C', true);
-    $pdf->Cell(40, 7, 'Valor Libros', 1, 1, 'C', true);
-    $pdf->SetTextColor(0);
-    $pdf->SetFont('Arial', '', 8);
+    $pdf->Cell(40, 7, 'Placa', 1, 0, 'C', true);
+    $pdf->Cell(50, 7, 'Serial', 1, 0, 'C', true);
+    $pdf->Cell(100, 7, 'Marca / Modelo', 1, 0, 'C', true);
     
-    $total = 0;
+    $pdf->SetTextColor(0);
+    $pdf->SetFont('Arial', '', 9);
+    
     foreach ($equipos as $eq) {
         $pdf->Ln();
-        $pdf->Cell(30, 6, $eq['placa_ur'], 1);
-        $pdf->Cell(40, 6, $eq['serial'], 1);
-        $pdf->Cell(80, 6, utf8_decode(substr($eq['marca'].' '.$eq['modelo'], 0, 45)), 1);
-        $pdf->Cell(40, 6, '$ '.number_format($eq['precio'],0,',','.'), 1, 0, 'R');
-        $total += $eq['precio'];
+        $pdf->Cell(40, 7, $eq['placa_ur'], 1);
+        $pdf->Cell(50, 7, $eq['serial'], 1);
+        $pdf->Cell(100, 7, utf8_decode(substr($eq['marca'].' '.$eq['modelo'], 0, 55)), 1);
     }
-    $pdf->Ln();
-    
-    // Total
-    $pdf->SetFont('Arial', 'B', 10);
-    $pdf->Cell(150, 8, 'TOTAL VALOR DADO DE BAJA:', 1, 0, 'R');
-    $pdf->Cell(40, 8, '$ '.number_format($total,0,',','.'), 1, 1, 'R');
-    $pdf->Ln(10);
+    $pdf->Ln(10); // Espacio después de la tabla
 
-    // Bloque 3: Texto Legal
+    // Bloque 3: Texto Legal (Lectura Robusta)
     $pdf->SetFont('Arial', '', 11);
     $pdf->Cell(0, 8, utf8_decode('CERTIFICACIÓN DE DISPOSICIÓN FINAL'), 1, 1, 'L', true);
     
-    // Leemos el archivo de texto de BAJA
-    $texto_legal = @file_get_contents('../core/acta_baja.txt');
-    if(!$texto_legal) $texto_legal = "CERTIFICACIÓN: Los equipos listados han sido retirados del inventario por obsolescencia o falla.";
+    // Ruta del archivo de texto
+    $archivo_texto = '../core/acta_baja.txt';
+    $texto_legal = "";
+
+    if (file_exists($archivo_texto)) {
+        $texto_legal = file_get_contents($archivo_texto);
+    }
+
+    // Si el archivo está vacío o no existe, usamos fallback
+    if (empty($texto_legal)) {
+        $texto_legal = "CERTIFICACIÓN: Los equipos listados han sido retirados del inventario por obsolescencia o falla. (Nota: Configure este texto en el módulo de Configuración).";
+    }
 
     $pdf->MultiCell(0, 6, utf8_decode($texto_legal), 0, 'J');
     $pdf->Ln(20);
@@ -145,7 +145,7 @@ if ($action == 'send_mail') {
 
         $mail->setFrom(SMTP_USER, 'URTRACK Bajas');
         
-        // En Bajas, el correo va al usuario logueado (Técnico/Auditor)
+        // En Bajas, el correo va al usuario logueado
         $destinatario = $_SESSION['correo_ldap'] ?? SMTP_USER;
         $mail->addAddress($destinatario);
         
@@ -153,7 +153,7 @@ if ($action == 'send_mail') {
 
         $mail->isHTML(true);
         $mail->Subject = 'URTRACK: Acta de Baja Masiva #' . $lote;
-        $mail->Body    = 'Buen día,<br><br>Adjunto encontrará el acta consolidada de la baja realizada.<br>' .
+        $mail->Body    = 'Buen día,<br><br>Adjunto encontrará el acta técnica de la baja realizada.<br>' .
                          '<b>Lote:</b> ' . $lote . '<br>' .
                          '<b>Motivo:</b> ' . $motivo . '<br>' .
                          '<b>Cantidad:</b> ' . count($equipos) . ' equipos.<br><br>' .
@@ -168,7 +168,7 @@ if ($action == 'send_mail') {
     exit;
 }
 
-// 6. VISTA HTML (COPIA EXACTA DE TU DISEÑO)
+// 6. VISTA HTML
 if ($action == 'view') {
     $pdf = construirPDF($lote, $motivo, $tecnico, $equipos);
     $pdfBase64 = base64_encode($pdf->Output('S'));
@@ -182,7 +182,6 @@ if ($action == 'view') {
         body { margin: 0; padding: 0; font-family: 'Segoe UI', sans-serif; background: #525659; overflow: hidden; }
         .toolbar { background: #323639; color: white; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; height: 40px; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
         .btn { padding: 8px 15px; border-radius: 4px; border: none; font-weight: bold; cursor: pointer; text-decoration: none; display: flex; align-items: center; gap: 8px; font-size: 0.9rem; transition: 0.2s; }
-        /* Botón rojo para distinguir que es una Baja */
         .btn-send { background: #dc3545; color: white; }
         .btn-send:hover { background: #b02a37; }
         .btn-send:disabled { background: #94a3b8; cursor: not-allowed; }
@@ -196,13 +195,13 @@ if ($action == 'view') {
     <div class="toolbar">
         <div style="display:flex; align-items:center;">
             <a href="baja_equipos.php" class="btn btn-back">⬅ Cerrar / Nueva Baja</a>
-            <span style="margin-left: 20px; color:#cbd5e1;">Lote de Baja #<?= $lote ?></span>
+            <span style="margin-left: 20px; color:#cbd5e1; font-weight:bold;">ACTA DE BAJA #<?= $lote ?></span>
         </div>
         
         <div style="display:flex; align-items:center;">
             <span id="statusMsg" class="status-msg"></span>
             <button id="btnSend" onclick="enviarCorreo()" class="btn btn-send">
-                🗑️ Confirmar y Enviar Acta
+                📧 Enviar Copia
             </button>
         </div>
     </div>
@@ -214,14 +213,12 @@ if ($action == 'view') {
             const btn = document.getElementById('btnSend');
             const msg = document.getElementById('statusMsg');
             
-            // Confirmación personalizada
-            if(!confirm('¿Enviar copia del Acta de Baja a <?= $_SESSION['correo_ldap'] ?? 'su correo' ?>?')) return;
+            if(!confirm('¿Enviar copia del Acta a <?= $_SESSION['correo_ldap'] ?? 'su correo' ?>?')) return;
 
             btn.disabled = true;
             btn.innerHTML = '⏳ Enviando...';
             msg.innerHTML = '';
 
-            // Llamada AJAX a la misma URL con action=send_mail
             fetch('generar_acta_baja.php?action=send_mail')
                 .then(response => {
                     if (response.ok) {
@@ -238,9 +235,8 @@ if ($action == 'view') {
                     btn.innerHTML = '❌ Reintentar';
                     btn.style.background = '#ef4444';
                     msg.innerHTML = 'Error de envío.';
-                    msg.style.color = '#fca5a5';
                     console.error(error);
-                    alert("Error detallado: " + error.message);
+                    alert("Error: " + error.message);
                 });
         }
     </script>
