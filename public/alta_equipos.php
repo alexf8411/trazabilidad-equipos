@@ -1,7 +1,8 @@
 <?php
 /**
  * public/alta_equipos.php
- * Módulo de Registro Maestro (Recursos) - Versión Ajustada Fase 3
+ * Módulo de Registro Maestro (Recursos) - Versión V1.3
+ * Ajuste: Placa UR y Hostname heredan el valor del Serial automáticamente.
  */
 require_once '../core/db.php';
 require_once '../core/session.php';
@@ -17,16 +18,16 @@ $msg = "";
 
 // 2. PROCESAMIENTO DEL FORMULARIO
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
-    // Sanitización básica
-    $placa = trim($_POST['placa']);
+    // Sanitización
     $serial = trim($_POST['serial']);
+    
+    // LÓGICA DE NEGOCIO: Placa y Hostname = Serial
+    $placa = $serial; 
+    
     $marca = trim($_POST['marca']);
     $modelo = trim($_POST['modelo']);
-    
-    // NUEVOS CAMPOS
     $vida_util = (int) $_POST['vida_util'];
     $precio = (float) $_POST['precio'];
-    
     $modalidad = $_POST['modalidad'];
     $fecha_compra = $_POST['fecha_compra'];
     $fecha_evento = date('Y-m-d H:i:s');
@@ -34,8 +35,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     try {
         $pdo->beginTransaction();
 
-        // A. INSERTAR EN EQUIPOS (HOJA DE VIDA)
-        // Se agregaron precio y vida_util a la consulta
+        // A. INSERTAR EN EQUIPOS
+        // Placa UR recibe el mismo valor que el Serial
         $sql_equipo = "INSERT INTO equipos (
                             placa_ur, serial, marca, modelo, 
                             vida_util, precio, 
@@ -49,7 +50,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $fecha_compra, $modalidad
         ]);
         
-        // B. OBTENER UBICACIÓN INICIAL (BODEGA)
+        // B. OBTENER BODEGA
         $stmt_bodega = $pdo->prepare("SELECT id, sede, nombre FROM lugares WHERE nombre = 'Bodega de Tecnología' LIMIT 1");
         $stmt_bodega->execute();
         $bodega = $stmt_bodega->fetch(PDO::FETCH_ASSOC);
@@ -58,8 +59,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             throw new Exception("Error Crítico: No existe la 'Bodega de Tecnología' en el catálogo de lugares.");
         }
 
-        // C. INSERTAR EN BITÁCORA (PRIMER EVENTO)
-        // CAMBIO: Hostname ahora es igual al Serial por defecto
+        // C. INSERTAR EN BITÁCORA
+        // Hostname recibe el mismo valor que el Serial
         $sql_bitacora = "INSERT INTO bitacora (
                             serial_equipo, id_lugar, sede, ubicacion, 
                             tipo_evento, correo_responsable, fecha_evento, 
@@ -75,17 +76,18 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             'Bodega de TI',
             $fecha_evento,
             $_SESSION['nombre'],
-            $serial // <--- AQUÍ EL CAMBIO: Hostname = Serial
+            $serial 
         ]);
 
         $pdo->commit();
-        header("Location: alta_equipos.php?status=success&p=$placa");
+        // Redireccionamos mostrando el Serial como referencia
+        header("Location: alta_equipos.php?status=success&s=$serial");
         exit;
 
     } catch (PDOException $e) {
         $pdo->rollBack();
         if ($e->getCode() == '23000') {
-            $msg = "<div class='toast error'>⚠️ Error: La Placa o el Serial ya existen en el sistema.</div>";
+            $msg = "<div class='toast error'>⚠️ Error: El Serial ya está registrado en el sistema.</div>";
         } else {
             $msg = "<div class='toast error'>❌ Error SQL: " . $e->getMessage() . "</div>";
         }
@@ -95,10 +97,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     }
 }
 
-// Mensajes de éxito
 if (isset($_GET['status']) && $_GET['status'] == 'success') {
-    $placa_creada = htmlspecialchars($_GET['p']);
-    $msg = "<div class='toast success'>✅ Equipo <b>$placa_creada</b> ingresado correctamente.</div>";
+    $serial_creado = htmlspecialchars($_GET['s']);
+    $msg = "<div class='toast success'>✅ Equipo con Serial <b>$serial_creado</b> ingresado correctamente.</div>";
 }
 ?>
 
@@ -151,13 +152,10 @@ if (isset($_GET['status']) && $_GET['status'] == 'success') {
         <form method="POST">
             <div class="form-grid">
                 <div class="form-group">
-                    <label>Placa UR *</label>
-                    <input type="text" name="placa" required placeholder="UR-XXXXX">
-                </div>
-                <div class="form-group">
                     <label>Serial Fabricante *</label>
                     <input type="text" name="serial" required placeholder="Serial S/N">
                 </div>
+                
                 <div class="form-group">
                     <label>Marca *</label>
                     <select name="marca" required>
@@ -169,9 +167,14 @@ if (isset($_GET['status']) && $_GET['status'] == 'success') {
                         <option value="Otro">Otro</option>
                     </select>
                 </div>
+                
                 <div class="form-group">
                     <label>Modelo *</label>
                     <input type="text" name="modelo" required placeholder="Ej: ProBook 440">
+                </div>
+                <div class="form-group">
+                    <label>Fecha de Compra *</label>
+                    <input type="date" name="fecha_compra" required>
                 </div>
 
                 <div class="form-group">
@@ -182,11 +185,8 @@ if (isset($_GET['status']) && $_GET['status'] == 'success') {
                     <label>Precio (COP) *</label>
                     <input type="number" name="precio" min="0" step="0.01" required placeholder="Ej: 4500000">
                 </div>
-                <div class="form-group">
-                    <label>Fecha de Compra *</label>
-                    <input type="date" name="fecha_compra" required>
-                </div>
-                <div class="form-group">
+                
+                <div class="form-group full-width">
                     <label>Modalidad *</label>
                     <select name="modalidad" required>
                         <option value="Propio">Propio</option>
@@ -196,8 +196,9 @@ if (isset($_GET['status']) && $_GET['status'] == 'success') {
                 </div>
 
                 <div class="full-width info-box">
-                    ℹ️ El equipo ingresará automáticamente a <strong>Bodega de Tecnología</strong> y su Hostname será igual al Serial.
+                    ℹ️ <strong>Nota:</strong> La Placa UR y el Hostname se asignarán automáticamente usando el Serial.
                 </div>
+                
                 <div class="full-width">
                     <button type="submit" class="btn-submit">💾 Guardar Equipo Único</button>
                 </div>
