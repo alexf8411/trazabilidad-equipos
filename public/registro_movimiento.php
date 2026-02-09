@@ -1,13 +1,12 @@
 <?php
 /**
  * public/registro_movimiento.php
- * Módulo de Asignación: Bloqueo de Bajas, Campos Adicionales y Dual LDAP
- * Versión Corregida con Info de Estado Actual
+ * Versión Consolidada: Protección de Bajas, Campos Adicionales y Dual LDAP
  */
 require_once '../core/db.php';
 require_once '../core/session.php';
 
-// 1. SEGURIDAD RBAC
+// 1. Seguridad RBAC
 if (!in_array($_SESSION['rol'], ['Administrador', 'Recursos', 'Soporte'])) {
     header('Location: dashboard.php'); exit;
 }
@@ -19,7 +18,7 @@ $msg = "";
 $stmt_lugares = $pdo->query("SELECT * FROM lugares WHERE estado = 1 ORDER BY sede, nombre");
 $lugares = $stmt_lugares->fetchAll(PDO::FETCH_ASSOC);
 
-// 3. Buscar Equipo (Con validación de estado e información actual)
+// 3. Buscar Equipo (Con validación de estado y la caja naranja original)
 if (isset($_GET['buscar']) && !empty($_GET['criterio'])) {
     $criterio = trim($_GET['criterio']);
     
@@ -40,8 +39,9 @@ if (isset($_GET['buscar']) && !empty($_GET['criterio'])) {
     if (!$equipo) {
         $msg = "<div class='alert error'>❌ Equipo no localizado en inventario.</div>";
     } 
+    // REGLA: No asignar equipos de BAJA
     elseif ($equipo['estado_maestro'] === 'Baja') {
-        $msg = "<div class='alert error'>🛑 <b>ACCESO DENEGADO:</b> El equipo se encuentra en estado de <b>BAJA</b>. No se permiten movimientos de activos retirados.</div>";
+        $msg = "<div class='alert error'>🛑 <b>ACCESO DENEGADO:</b> El equipo está en estado de <b>BAJA</b>. No se permiten movimientos.</div>";
         $equipo = null;
     }
 }
@@ -63,12 +63,17 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirmar'])) {
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())";
         
         $pdo->prepare($sql)->execute([
-            $_POST['serial'], $_POST['id_lugar'], $l['sede'], $l['nombre'],
-            $_POST['campo_adic1'], $_POST['campo_adic2'],
+            $_POST['serial'], 
+            $_POST['id_lugar'], 
+            $l['sede'], 
+            $l['nombre'],
+            $_POST['campo_adic1'], 
+            $_POST['campo_adic2'],
             $_POST['tipo_evento'], 
-            $_POST['correo_resp_real_p'], // Principal
-            $_POST['correo_resp_real_s'] ?: null, // Secundario
-            $_SESSION['nombre'], strtoupper($_POST['hostname'])
+            $_POST['correo_resp_real'], // Responsable Principal
+            $_POST['correo_sec_real'] ?: null, // Responsable Secundario (Opcional)
+            $_SESSION['nombre'], 
+            strtoupper($_POST['hostname'])
         ]);
 
         $pdo->commit();
@@ -93,17 +98,15 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirmar'])) {
         .header { display: flex; justify-content: space-between; border-bottom: 2px solid var(--primary); padding-bottom: 15px; margin-bottom: 30px; }
         .search-section { display: flex; gap: 10px; margin-bottom: 30px; background: #f1f5f9; padding: 20px; border-radius: 8px; }
         input, select { padding: 12px; border: 1px solid #cbd5e1; border-radius: 6px; width: 100%; box-sizing: border-box; }
-        
         .info-pill { background: #f8fafc; padding: 20px; border-radius: 8px; margin-bottom: 25px; display: grid; grid-template-columns: 1fr 1fr; gap: 15px; border-left: 5px solid var(--primary); }
         .current-status-box { grid-column: span 2; background: #fff7ed; border: 1px solid #fed7aa; padding: 10px; border-radius: 6px; margin-top: 10px; }
-        
         .label-sm { display: block; font-size: 0.7rem; color: var(--text-secondary); text-transform: uppercase; font-weight: 700; margin-bottom: 5px; }
         .data-val { font-size: 0.95rem; font-weight: 600; color: #1e293b; }
         .btn-submit { background: var(--success); color: white; border: none; padding: 18px; border-radius: 8px; width: 100%; font-weight: 700; cursor: pointer; opacity: 0.5; margin-top: 25px; }
         .user-card { background: #fff; border: 2px solid var(--primary); padding: 15px; border-radius: 8px; margin-top: 15px; display: none; }
         .alert { padding: 15px; border-radius: 8px; margin-bottom: 20px; }
         .error { background: #fee2e2; color: #991b1b; }
-        .ldap-group { background: #fcfcfc; border: 1px solid #eee; padding: 20px; border-radius: 8px; margin-top: 10px; }
+        .ldap-group { background: #fcfcfc; border: 1px solid #eee; padding: 20px; border-radius: 8px; margin-top: 15px; }
     </style>
 </head>
 <body>
@@ -130,7 +133,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirmar'])) {
                 <div style="display:grid; grid-template-columns: 1fr 1fr;">
                     <div>
                         <span class="label-sm" style="color:var(--warning)">📍 Ubicación Actual:</span>
-                        <div class="data-val"><?= ($equipo['sede_actual'] ?? 'N/A') . " - " . ($equipo['ubicacion_actual'] ?? 'Sin Ubicación') ?></div>
+                        <div class="data-val"><?= $equipo['sede_actual'] ?> - <?= $equipo['ubicacion_actual'] ?></div>
                     </div>
                     <div>
                         <span class="label-sm" style="color:var(--warning)">👤 Responsable Actual:</span>
@@ -142,12 +145,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirmar'])) {
 
         <form method="POST">
             <input type="hidden" name="serial" value="<?= $equipo['serial'] ?>">
-
-            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:20px;">
-                <div>
-                    <label class="label-sm">Nuevo Hostname</label>
-                    <input type="text" name="hostname" required placeholder="Ej: PB-ADM-L01">
-                </div>
+            <input type="hidden" name="correo_resp_real" id="correo_resp_real"> <input type="hidden" name="correo_sec_real" id="correo_sec_real">   <div style="display:grid; grid-template-columns: 1fr 1fr; gap:20px;">
+                <div><label class="label-sm">Nuevo Hostname</label><input type="text" name="hostname" required placeholder="Ej: PB-ADM-L01"></div>
                 <div>
                     <label class="label-sm">Tipo de Movimiento</label>
                     <select name="tipo_evento">
@@ -168,43 +167,33 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirmar'])) {
                 </div>
                 <div>
                     <label class="label-sm">Ubicación / Edificio Destino</label>
-                    <select id="selectLugar" name="id_lugar" required disabled>
-                        <option value="">-- Primero elija Sede --</option>
-                    </select>
+                    <select id="selectLugar" name="id_lugar" required disabled><option value="">-- Primero elija Sede --</option></select>
                 </div>
 
-                <div>
-                    <label class="label-sm">Campo Adicional 1</label>
-                    <input type="text" name="campo_adic1" placeholder="Info extra 1...">
-                </div>
-                <div>
-                    <label class="label-sm">Campo Adicional 2</label>
-                    <input type="text" name="campo_adic2" placeholder="Info extra 2...">
-                </div>
+                <div><label class="label-sm">Campo Adicional 1</label><input type="text" name="campo_adic1" placeholder="Info extra 1..."></div>
+                <div><label class="label-sm">Campo Adicional 2</label><input type="text" name="campo_adic2" placeholder="Info extra 2..."></div>
 
                 <div class="ldap-group" style="grid-column: span 2;">
-                    <label class="label-sm">👤 Nuevo Responsable Principal (LDAP)</label>
+                    <label class="label-sm">👤 Responsable Principal (LDAP)</label>
                     <div style="display:flex; gap:10px;">
-                        <input type="text" id="user_id_p" placeholder="nombre.apellido">
-                        <button type="button" onclick="verificarLDAP('p')" style="white-space:nowrap; background:var(--primary); color:white; border:none; padding:0 15px; border-radius:6px; cursor:pointer;">🔍 Verificar</button>
+                        <input type="text" id="user_id" placeholder="nombre.apellido">
+                        <button type="button" onclick="verificarUsuario()" style="white-space:nowrap; background:var(--primary); color:white; border:none; padding:0 15px; border-radius:6px; cursor:pointer;">🔍 Verificar</button>
                     </div>
-                    <input type="hidden" name="correo_resp_real_p" id="correo_resp_real_p">
-                    <div id="userCard_p" class="user-card">
-                        <h4 id="ldap_nombre_p" style="margin:0; color:var(--primary);"></h4>
-                        <div id="ldap_info_p" style="font-size:0.85rem;"></div>
+                    <div id="userCard" class="user-card">
+                        <h4 id="ldap_nombre" style="margin:0; color:var(--primary);"></h4>
+                        <div id="ldap_info" style="font-size:0.85rem;"></div>
                     </div>
                 </div>
 
                 <div class="ldap-group" style="grid-column: span 2;">
-                    <label class="label-sm">👥 Responsable Secundario (Opcional - LDAP)</label>
+                    <label class="label-sm">👥 Responsable Secundario (LDAP - Opcional)</label>
                     <div style="display:flex; gap:10px;">
-                        <input type="text" id="user_id_s" placeholder="nombre.apellido">
-                        <button type="button" onclick="verificarLDAP('s')" style="white-space:nowrap; background:#64748b; color:white; border:none; padding:0 15px; border-radius:6px; cursor:pointer;">🔍 Verificar</button>
+                        <input type="text" id="user_id_sec" placeholder="nombre.apellido">
+                        <button type="button" onclick="verificarUsuarioSecundario()" style="white-space:nowrap; background:#64748b; color:white; border:none; padding:0 15px; border-radius:6px; cursor:pointer;">🔍 Verificar</button>
                     </div>
-                    <input type="hidden" name="correo_resp_real_s" id="correo_resp_real_s">
-                    <div id="userCard_s" class="user-card">
-                        <h4 id="ldap_nombre_s" style="margin:0; color:var(--text-secondary);"></h4>
-                        <div id="ldap_info_s" style="font-size:0.85rem;"></div>
+                    <div id="userCard_sec" class="user-card">
+                        <h4 id="ldap_nombre_sec" style="margin:0; color:var(--text-secondary);"></h4>
+                        <div id="ldap_info_sec" style="font-size:0.85rem;"></div>
                     </div>
                 </div>
             </div>
@@ -213,57 +202,45 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirmar'])) {
         </form>
 
         <script>
+            // Lógica de filtrado
             const lugaresData = <?= json_encode($lugares) ?>;
             function filtrarLugares() {
                 const sede = document.getElementById('selectSede').value;
                 const sl = document.getElementById('selectLugar');
                 sl.innerHTML = '<option value="">-- Seleccionar Ubicación --</option>';
-                const filtrados = lugaresData.filter(l => l.sede === sede);
-                filtrados.forEach(l => { 
+                lugaresData.filter(l => l.sede === sede).forEach(l => { 
                     sl.innerHTML += `<option value="${l.id}">${l.nombre}</option>`; 
                 });
-                sl.disabled = (filtrados.length === 0);
+                sl.disabled = false;
             }
 
-            function verificarLDAP(tipo) {
-                const userId = document.getElementById('user_id_' + tipo).value;
-                const card = document.getElementById('userCard_' + tipo);
-                const hiddenInput = document.getElementById('correo_resp_real_' + tipo);
-                const btnSubmit = document.getElementById('btnSubmit');
+            /**
+             * FUNCIÓN PARA EL RESPONSABLE SECUNDARIO
+             * Basada en tu lógica original de verificar_ldap.js pero adaptada a los IDs secundarios
+             */
+            function verificarUsuarioSecundario() {
+                const user = document.getElementById('user_id_sec').value;
+                const card = document.getElementById('userCard_sec');
+                if(!user) return alert("Ingrese un usuario");
 
-                if (!userId) return alert("Ingrese un usuario");
-
-                fetch(`api_ldap.php?user=${userId}`)
+                // Llamamos a tu mismo bridge api_ldap.php
+                fetch(`api_ldap.php?user=${user}`)
                 .then(r => r.json())
                 .then(data => {
-                    if (data.success) {
-                        document.getElementById('ldap_nombre_' + tipo).innerText = data.nombre;
-                        document.getElementById('ldap_info_' + tipo).innerText = data.cargo + " | " + data.correo;
-                        hiddenInput.value = data.correo;
+                    if(data.success) {
+                        document.getElementById('ldap_nombre_sec').innerText = data.nombre;
+                        document.getElementById('ldap_info_sec').innerText = data.cargo + " | " + data.correo;
+                        document.getElementById('correo_sec_real').value = data.correo;
                         card.style.display = 'block';
-                        
-                        // Validar habilitación del botón
-                        const principalOK = document.getElementById('correo_resp_real_p').value !== "";
-                        if (principalOK) {
-                            btnSubmit.disabled = false;
-                            btnSubmit.style.opacity = "1";
-                        }
                     } else {
-                        alert("Usuario no localizado en LDAP");
+                        alert("Usuario secundario no localizado en LDAP");
                         card.style.display = 'none';
-                        hiddenInput.value = "";
-                        if (tipo === 'p') {
-                            btnSubmit.disabled = true;
-                            btnSubmit.style.opacity = "0.5";
-                        }
+                        document.getElementById('correo_sec_real').value = "";
                     }
-                })
-                .catch(err => {
-                    console.error("Error LDAP:", err);
-                    alert("Error al conectar con el servicio LDAP");
                 });
             }
         </script>
+        <script src="js/verificar_ldap.js"></script>
     <?php endif; ?>
 </div>
 </body>
