@@ -34,6 +34,25 @@ if (!$data) {
     die("<div style='color:red; text-align:center; margin-top:50px; font-family:sans-serif;'>Error: No existen movimientos.</div>");
 }
 
+/* -------------------------------------------------------------------------
+   [OPCIONAL] LÓGICA DE GUARDADO DE FIRMA DIGITAL
+   Descomentar si se desea reactivar la firma en pantalla.
+   -------------------------------------------------------------------------
+if ($action == 'save_signature' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $data_json = json_decode(file_get_contents('php://input'), true);
+    if (isset($data_json['imagen'])) {
+        // Asegúrate de tener la columna 'firma_digital' en tu tabla bitacora
+        $stmt = $pdo->prepare("UPDATE bitacora SET firma_digital = ? WHERE id_evento = ?");
+        $stmt->execute([$data_json['imagen'], $data['id_evento']]);
+        echo json_encode(['status' => 'ok']);
+    } else {
+        http_response_code(400);
+        echo json_encode(['status' => 'error', 'msg' => 'No image data']);
+    }
+    exit;
+}
+*/
+
 // 3. CLASE PDF
 class PDF extends \FPDF {
     function Header() {
@@ -144,6 +163,21 @@ function construirPDF($data) {
     $pdf->Cell(0, 7, utf8_decode($data['tecnico_responsable']), 0, 1);
     $pdf->Ln(20);
 
+    /* -------------------------------------------------------------------------
+       [OPCIONAL] INCRUSTAR FIRMA DIGITAL EN EL PDF
+       Descomentar si se usa la firma en pantalla.
+       -------------------------------------------------------------------------
+    $y_firmas = $pdf->GetY();
+    if (!empty($data['firma_digital'])) {
+        $img_parts = explode(',', $data['firma_digital']);
+        $img_data = base64_decode($img_parts[1]);
+        $tmp_file = sys_get_temp_dir() . '/firma_' . $data['id_evento'] . '.png';
+        file_put_contents($tmp_file, $img_data);
+        $pdf->Image($tmp_file, 15, $y_firmas - 15, 40, 0); 
+        unlink($tmp_file); 
+    }
+    */
+
     // Líneas de Firmas
     $pdf->Cell(90, 0, '', 'T'); 
     $pdf->Cell(10, 0, '', 0);
@@ -163,7 +197,7 @@ if ($action == 'send_mail') {
 
     $mail = new PHPMailer(true);
     try {
-        $mail->SMTPDebug = 2; // Debug si falla
+        $mail->SMTPDebug = 2; 
         $mail->isSMTP();
         $mail->Host       = SMTP_HOST;
         $mail->SMTPAuth   = true;
