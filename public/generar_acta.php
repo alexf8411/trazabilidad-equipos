@@ -243,8 +243,13 @@ if ($action == 'view') {
         </div>
         <div>
             <span id="statusMsg" style="margin-right:15px; font-size:0.9rem;"></span>
-            <button id="btnSend" onclick="enviarCorreo()" class="btn btn-send">📧 Enviar al Usuario</button>
-            
+            <button id="btnSend" 
+                    class="btn btn-send"
+                    data-serial="<?= $serial ?>" 
+                    data-email="<?= htmlspecialchars($data['correo_responsable']) ?>"
+                    data-placa="<?= htmlspecialchars($data['placa_ur']) ?>">
+                📧 Enviar al Usuario
+            </button>
         </div>
     </div>
     <iframe src="data:application/pdf;base64,<?= $pdfBase64 ?>"></iframe>
