@@ -1,12 +1,13 @@
 <?php
 /**
  * public/configuracion.php
- * V2.1 - Multi-Actas
- * Gestión de credenciales y textos legales (Asignación y Baja)
+ * V2.3 - Gestión Centralizada y Segura
+ * Permite editar credenciales y textos legales sin tocar código.
  */
 require_once '../core/session.php';
 
 // 1. SEGURIDAD ESTRICTA
+// Solo el Administrador puede ver o tocar esto
 if (!isset($_SESSION['logged_in']) || $_SESSION['rol'] !== 'Administrador') {
     header("Location: dashboard.php");
     exit;
@@ -17,8 +18,8 @@ $files = [
     'mail'      => '../core/config_mail.php',
     'ldap'      => '../core/config_ldap.php',
     'db'        => '../core/db.php',
-    'txt_asign' => '../core/acta_legal.txt', // Texto original
-    'txt_baja'  => '../core/acta_baja.txt'   // NUEVO: Texto de baja
+    'txt_asign' => '../core/acta_legal.txt',
+    'txt_baja'  => '../core/acta_baja.txt'
 ];
 
 // Asegurar que existan los archivos de texto
@@ -30,7 +31,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     try {
         function s($input) { return addslashes($input); }
 
-        // A. MAIL
+        // A. MAIL (Aquí ocurre la magia de reemplazar en el archivo config_mail.php)
         $content = file_get_contents($files['mail']);
         $content = preg_replace("/define\('SMTP_USER',\s*'([^']*)'\);/", "define('SMTP_USER', '" . s($_POST['smtp_user']) . "');", $content);
         $content = preg_replace("/define\('SMTP_PASS',\s*'([^']*)'\);/", "define('SMTP_PASS', '" . s($_POST['smtp_pass']) . "');", $content);
@@ -52,14 +53,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         file_put_contents($files['txt_asign'], $_POST['texto_asign']);
         file_put_contents($files['txt_baja'],  $_POST['texto_baja']);
 
-        $msg = "<div class='alert success'>✅ Configuración guardada correctamente.</div>";
+        $msg = "<div class='alert success'>✅ Configuración actualizada correctamente.</div>";
 
     } catch (Exception $e) {
-        $msg = "<div class='alert error'>❌ Error al escribir archivos.</div>";
+        $msg = "<div class='alert error'>❌ Error al escribir en los archivos de configuración. Verifique permisos.</div>";
     }
 }
 
-// 3. LEER VALORES
+// 3. LEER VALORES ACTUALES PARA MOSTRARLOS
 function clean($str) { return htmlspecialchars(stripslashes($str)); }
 $vals = [];
 
@@ -105,6 +106,10 @@ $vals['txt_baja']  = file_get_contents($files['txt_baja']);
         .alert { padding: 15px; border-radius: 5px; margin-bottom: 20px; text-align: center; font-weight: bold; }
         .success { background: #d4edda; color: #155724; }
         .error { background: #f8d7da; color: #721c24; }
+        
+        /* Estilos de ayuda visual */
+        .help-text { font-size: 0.85rem; color: #6c757d; margin-top: 5px; display: block; line-height: 1.3; background: #f8f9fa; padding: 8px; border-radius: 4px; border-left: 3px solid #17a2b8; }
+        .help-text b { color: #002D72; }
     </style>
 </head>
 <body>
@@ -117,17 +122,34 @@ $vals['txt_baja']  = file_get_contents($files['txt_baja']);
             
             <h3>📧 Servidor de Correo (SMTP)</h3>
             <div class="form-grid">
-                <div><label>Usuario</label><input type="text" name="smtp_user" value="<?= clean($vals['smtp_user']) ?>"></div>
-                <div><label>Password</label><input type="password" name="smtp_pass" value="<?= clean($vals['smtp_pass']) ?>"></div>
+                <div>
+                    <label>Correo Remitente</label>
+                    <input type="text" name="smtp_user" value="<?= clean($vals['smtp_user']) ?>" placeholder="usuario@universidad.edu.co">
+                </div>
+                <div>
+                    <label>Contraseña (App Password)</label>
+                    <input type="password" name="smtp_pass" value="<?= clean($vals['smtp_pass']) ?>" placeholder="xxxx xxxx xxxx xxxx">
+                    
+                    <span class="help-text">
+                        ℹ️ <b>Importante:</b> Debido a la seguridad MFA de la Universidad, no use su clave personal.<br>
+                        Genere una <b>"Contraseña de Aplicación"</b> en su cuenta de Office 365 y péguela aquí.
+                    </span>
+                </div>
             </div>
 
-            <h3>🔑 Credenciales LDAP (Bind User)</h3>
+            <h3>🔑 Credenciales LDAP (Acceso Directorio Activo)</h3>
             <div class="form-grid">
-                <div><label>Usuario</label><input type="text" name="ldap_user" value="<?= clean($vals['ldap_user']) ?>"></div>
-                <div><label>Password</label><input type="password" name="ldap_pass" value="<?= clean($vals['ldap_pass']) ?>"></div>
+                <div>
+                    <label>Bind User (DN)</label>
+                    <input type="text" name="ldap_user" value="<?= clean($vals['ldap_user']) ?>" placeholder="CN=admin,DC=dominio...">
+                </div>
+                <div>
+                    <label>Bind Password</label>
+                    <input type="password" name="ldap_pass" value="<?= clean($vals['ldap_pass']) ?>">
+                </div>
             </div>
 
-            <h3>💾 Base de Datos (MySQL)</h3>
+            <h3>💾 Base de Datos (MySQL Local)</h3>
             <div class="form-grid">
                 <div><label>Usuario BD</label><input type="text" name="db_user" value="<?= clean($vals['db_user']) ?>"></div>
                 <div><label>Password BD</label><input type="password" name="db_pass" value="<?= clean($vals['db_pass']) ?>"></div>
@@ -145,7 +167,7 @@ $vals['txt_baja']  = file_get_contents($files['txt_baja']);
                 </div>
             </div>
 
-            <button type="submit" class="btn-save" onclick="return confirm('¿Guardar cambios?');">GUARDAR CONFIGURACIÓN</button>
+            <button type="submit" class="btn-save" onclick="return confirm('¿Está seguro de actualizar la configuración crítica? Esto podría afectar el acceso al sistema.');">GUARDAR CONFIGURACIÓN</button>
         </div>
     </form>
 </div>
