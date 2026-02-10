@@ -1,7 +1,7 @@
 <?php
 /**
  * public/generar_acta.php
- * Generación de Acta PDF con Observaciones y Responsable Secundario
+ * Generación de Acta PDF: Visualizar, Enviar por Correo y Descargar
  */
 require_once '../core/db.php';
 require_once '../core/session.php';
@@ -35,13 +35,11 @@ if (!$data) {
 }
 
 /* -------------------------------------------------------------------------
-   [OPCIONAL] LÓGICA DE GUARDADO DE FIRMA DIGITAL
-   Descomentar si se desea reactivar la firma en pantalla.
+   [OPCIONAL] LÓGICA DE GUARDADO DE FIRMA DIGITAL (Comentada)
    -------------------------------------------------------------------------
 if ($action == 'save_signature' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $data_json = json_decode(file_get_contents('php://input'), true);
     if (isset($data_json['imagen'])) {
-        // Asegúrate de tener la columna 'firma_digital' en tu tabla bitacora
         $stmt = $pdo->prepare("UPDATE bitacora SET firma_digital = ? WHERE id_evento = ?");
         $stmt->execute([$data_json['imagen'], $data['id_evento']]);
         echo json_encode(['status' => 'ok']);
@@ -164,8 +162,7 @@ function construirPDF($data) {
     $pdf->Ln(20);
 
     /* -------------------------------------------------------------------------
-       [OPCIONAL] INCRUSTAR FIRMA DIGITAL EN EL PDF
-       Descomentar si se usa la firma en pantalla.
+       [OPCIONAL] INCRUSTAR FIRMA DIGITAL (Comentada)
        -------------------------------------------------------------------------
     $y_firmas = $pdf->GetY();
     if (!empty($data['firma_digital'])) {
@@ -190,7 +187,15 @@ function construirPDF($data) {
     return $pdf;
 }
 
-// 5. ENVÍO DE CORREO
+// 5. ACCIÓN: DESCARGAR PDF (NUEVO)
+if ($action == 'download') {
+    $pdf = construirPDF($data);
+    // 'D' fuerza la descarga con el nombre especificado
+    $pdf->Output('D', 'Acta_URTRACK_' . $data['placa_ur'] . '.pdf');
+    exit;
+}
+
+// 6. ACCIÓN: ENVIAR CORREO
 if ($action == 'send_mail') {
     $pdf = construirPDF($data);
     $pdfContent = $pdf->Output('S'); 
@@ -244,7 +249,7 @@ if ($action == 'send_mail') {
     exit;
 }
 
-// 6. VISTA HTML CON VISOR LIMPIO
+// 7. VISTA HTML
 if ($action == 'view') {
     $pdf = construirPDF($data);
     $pdfBase64 = base64_encode($pdf->Output('S'));
@@ -261,7 +266,8 @@ if ($action == 'view') {
         .btn-send { background: #22c55e; color: white; }
         .btn-send:hover { background: #16a34a; }
         .btn-back { background: #64748b; color: white; }
-        /* iframe full screen menos toolbar */
+        .btn-down { background: #0ea5e9; color: white; } /* Color Azul Claro */
+        .btn-down:hover { background: #0284c7; }
         iframe { width: 100%; height: calc(100vh - 60px); border: none; display: block; }
     </style>
 </head>
@@ -273,6 +279,11 @@ if ($action == 'view') {
         </div>
         <div>
             <span id="statusMsg" style="margin-right:15px; font-size:0.9rem;"></span>
+            
+            <a href="generar_acta.php?serial=<?= $serial ?>&action=download" class="btn btn-down" style="margin-right:10px;">
+                ⬇ Descargar PDF
+            </a>
+
             <button id="btnSend" 
                     class="btn btn-send"
                     data-serial="<?= $serial ?>" 
