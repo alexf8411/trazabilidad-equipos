@@ -164,6 +164,9 @@ if ($action == 'send_mail') {
 
     $mail = new PHPMailer(true);
     try {
+        // Configuración de depuración (Solo si falla para ver el log real)
+        $mail->SMTPDebug = 2;
+
         $mail->isSMTP();
         $mail->Host       = SMTP_HOST;
         $mail->SMTPAuth   = true;
@@ -171,6 +174,16 @@ if ($action == 'send_mail') {
         $mail->Password   = SMTP_PASS;
         $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
         $mail->Port       = SMTP_PORT;
+        $mail->CharSet    = 'UTF-8'; // Asegura que los acentos en el cuerpo se vean bien
+
+        // Ajuste para TLS 1.2+ (Office 365 lo requiere)
+        $mail->SMTPOptions = array(
+            'ssl' => array(
+                'verify_peer' => false,
+                'verify_peer_name' => false,
+                'allow_self_signed' => true
+            )
+        );
 
         $mail->setFrom(SMTP_USER, SMTP_FROM_NAME);
         $mail->addAddress($data['correo_responsable']);

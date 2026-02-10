@@ -132,7 +132,7 @@ try {
                 <div><strong>📍 Ubicación:</strong> <?= htmlspecialchars($ev['sede']." - ".$ev['ubicacion']) ?></div>
                 <div><strong>👤 Responsable:</strong> <?= htmlspecialchars($ev['correo_responsable']) ?></div>
                 <div><strong>🖥️ Hostname:</strong> <span class="badge"><?= htmlspecialchars($ev['hostname'] ?? 'N/A') ?></span></div>
-                <div><strong>🛠️ Técnico:</strong> <?= htmlspecialchars($ev['tecnico_responsable']) ?></div>
+                <div><strong>🛠️ Asignado por:</strong> <?= htmlspecialchars($ev['tecnico_responsable']) ?></div>
 
                 <?php if(!empty($ev['responsable_secundario']) || !empty($ev['campo_adic1']) || !empty($ev['campo_adic2'])): ?>
                 <div class="obs-box">
