@@ -187,10 +187,9 @@ function construirPDF($data) {
     return $pdf;
 }
 
-// 5. ACCIÓN: DESCARGAR PDF (NUEVO)
+// 5. ACCIÓN: DESCARGAR PDF
 if ($action == 'download') {
     $pdf = construirPDF($data);
-    // 'D' fuerza la descarga con el nombre especificado
     $pdf->Output('D', 'Acta_URTRACK_' . $data['placa_ur'] . '.pdf');
     exit;
 }
@@ -261,13 +260,24 @@ if ($action == 'view') {
     <title>Vista Previa Acta | <?= $data['placa_ur'] ?></title>
     <style>
         body { margin: 0; padding: 0; font-family: 'Segoe UI', sans-serif; background: #525659; overflow: hidden; }
-        .toolbar { background: #323639; color: white; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; height: 40px; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
+        /* Toolbar principal */
+        .toolbar { 
+            background: #323639; 
+            color: white; 
+            padding: 10px 20px; 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+            height: 40px; 
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2); 
+        }
         .btn { padding: 8px 15px; border-radius: 4px; border: none; font-weight: bold; cursor: pointer; text-decoration: none; display: flex; align-items: center; gap: 8px; font-size: 0.9rem; transition: 0.2s; }
         .btn-send { background: #22c55e; color: white; }
         .btn-send:hover { background: #16a34a; }
         .btn-back { background: #64748b; color: white; }
-        .btn-down { background: #0ea5e9; color: white; } /* Color Azul Claro */
+        .btn-down { background: #0ea5e9; color: white; }
         .btn-down:hover { background: #0284c7; }
+        
         iframe { width: 100%; height: calc(100vh - 60px); border: none; display: block; }
     </style>
 </head>
@@ -277,10 +287,11 @@ if ($action == 'view') {
             <a href="dashboard.php" class="btn btn-back">⬅ Dashboard</a>
             <span style="margin-left: 20px; color:#cbd5e1;">Acta #<?= $data['id_evento'] ?> - Activo: <?= $data['placa_ur'] ?></span>
         </div>
-        <div>
-            <span id="statusMsg" style="margin-right:15px; font-size:0.9rem;"></span>
+        
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <span id="statusMsg" style="font-size:0.9rem;"></span>
             
-            <a href="generar_acta.php?serial=<?= $serial ?>&action=download" class="btn btn-down" style="margin-right:10px;">
+            <a href="generar_acta.php?serial=<?= $serial ?>&action=download" class="btn btn-down">
                 ⬇ Descargar PDF
             </a>
 
