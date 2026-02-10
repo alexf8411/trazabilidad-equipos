@@ -18,7 +18,7 @@ if (!isset($_GET['serial'])) {
 $serial = $_GET['serial'];
 $action = $_GET['action'] ?? 'view';
 
-// 2. OBTENER DATOS (La consulta ya trae b.* incluyendo los nuevos campos)
+// 2. OBTENER DATOS
 $sql = "SELECT e.*, b.*, l.nombre as nombre_lugar 
         FROM equipos e
         JOIN bitacora b ON e.serial = b.serial_equipo
@@ -104,7 +104,7 @@ function construirPDF($data) {
     $pdf->Cell(155, 8, $data['hostname'], 1, 1);
     $pdf->Ln(5);
 
-    // BLOQUE NUEVO: Observaciones (Solo si existen)
+    // Bloque Observaciones
     if (!empty($data['campo_adic1']) || !empty($data['campo_adic2'])) {
         $pdf->SetFont('Arial', '', 11);
         $pdf->Cell(0, 8, utf8_decode('OBSERVACIONES ADICIONALES'), 1, 1, 'L', true);
@@ -125,13 +125,12 @@ function construirPDF($data) {
     $pdf->MultiCell(0, 5, utf8_decode($texto_legal), 0, 'J');
     $pdf->Ln(4);
 
-    // FIRMANTES DETALLE
+    // Firmantes
     $pdf->SetFont('Arial', 'B', 10);
     $pdf->Cell(50, 7, 'Usuario Responsable:', 0);
     $pdf->SetFont('Arial', '', 10);
     $pdf->Cell(0, 7, $data['correo_responsable'], 0, 1);
 
-    // Mostrar responsable secundario solo si existe
     if (!empty($data['responsable_secundario'])) {
         $pdf->SetFont('Arial', 'B', 10);
         $pdf->Cell(50, 7, 'Responsable Secundario:', 0);
@@ -145,7 +144,7 @@ function construirPDF($data) {
     $pdf->Cell(0, 7, utf8_decode($data['tecnico_responsable']), 0, 1);
     $pdf->Ln(20);
 
-    // Firmas
+    // Líneas de Firmas
     $pdf->Cell(90, 0, '', 'T'); 
     $pdf->Cell(10, 0, '', 0);
     $pdf->Cell(90, 0, '', 'T');
@@ -164,9 +163,7 @@ if ($action == 'send_mail') {
 
     $mail = new PHPMailer(true);
     try {
-        // Configuración de depuración (Solo si falla para ver el log real)
-        $mail->SMTPDebug = 2;
-
+        $mail->SMTPDebug = 2; // Debug si falla
         $mail->isSMTP();
         $mail->Host       = SMTP_HOST;
         $mail->SMTPAuth   = true;
@@ -174,9 +171,8 @@ if ($action == 'send_mail') {
         $mail->Password   = SMTP_PASS;
         $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
         $mail->Port       = SMTP_PORT;
-        $mail->CharSet    = 'UTF-8'; // Asegura que los acentos en el cuerpo se vean bien
+        $mail->CharSet    = 'UTF-8';
 
-        // Ajuste para TLS 1.2+ (Office 365 lo requiere)
         $mail->SMTPOptions = array(
             'ssl' => array(
                 'verify_peer' => false,
@@ -188,7 +184,6 @@ if ($action == 'send_mail') {
         $mail->setFrom(SMTP_USER, SMTP_FROM_NAME);
         $mail->addAddress($data['correo_responsable']);
         
-        // Adjunto
         $mail->addStringAttachment($pdfContent, 'Acta_URTRACK_' . $data['placa_ur'] . '.pdf');
 
         $mail->isHTML(true);
@@ -215,7 +210,7 @@ if ($action == 'send_mail') {
     exit;
 }
 
-// 6. VISTA HTML (Se mantiene igual)
+// 6. VISTA HTML CON VISOR LIMPIO
 if ($action == 'view') {
     $pdf = construirPDF($data);
     $pdfBase64 = base64_encode($pdf->Output('S'));
@@ -232,7 +227,8 @@ if ($action == 'view') {
         .btn-send { background: #22c55e; color: white; }
         .btn-send:hover { background: #16a34a; }
         .btn-back { background: #64748b; color: white; }
-        iframe { width: 100%; height: calc(100vh - 60px); border: none; }
+        /* iframe full screen menos toolbar */
+        iframe { width: 100%; height: calc(100vh - 60px); border: none; display: block; }
     </style>
 </head>
 <body>
@@ -252,15 +248,10 @@ if ($action == 'view') {
             </button>
         </div>
     </div>
-    <iframe src="data:application/pdf;base64,<?= $pdfBase64 ?>"></iframe>
 
-    <script>
-        // Pequeño helper por si no se ha creado el archivo JS aún, para que no rompa
-        // Idealmente, esto se elimina cuando pongas el archivo en public/js/acta-mail.js
-    </script>
-    
+    <iframe src="data:application/pdf;base64,<?= $pdfBase64 ?>#toolbar=0&navpanes=0&view=FitH"></iframe>
+
     <script src="js/acta-mail.js"></script>
-
-    </body>
+</body>
 </html>
 <?php } ?>
