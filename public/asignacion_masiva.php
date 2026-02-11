@@ -1,7 +1,7 @@
 <?php
 /**
  * public/asignacion_masiva.php
- * Versión 6.2 - SIMPLIFICADO: Solo mejoras en detección CSV
+ * Versión 5.0 - UI con Switches de Seguridad (Igual a movimientos)
  */
 require_once '../core/db.php';
 require_once '../core/session.php';
@@ -20,40 +20,6 @@ $step = 1;
 $preview_data = [];
 $csv_errors = false;
 
-/**
- * Detecta automáticamente el delimitador del CSV
- */
-function detectarDelimitador($archivo) {
-    $handle = fopen($archivo, 'r');
-    $primera_linea = fgets($handle);
-    fclose($handle);
-    
-    $delimitadores = [',', ';', "\t"];
-    $max_count = 0;
-    $delimitador_detectado = ',';
-    
-    foreach ($delimitadores as $delim) {
-        $count = substr_count($primera_linea, $delim);
-        if ($count > $max_count) {
-            $max_count = $count;
-            $delimitador_detectado = $delim;
-        }
-    }
-    
-    return $delimitador_detectado;
-}
-
-/**
- * Limpia espacios y caracteres raros de una celda
- */
-function limpiarCelda($texto) {
-    $texto = trim($texto);
-    $texto = str_replace(["\r", "\n"], ' ', $texto);
-    $texto = preg_replace('/\s+/', ' ', $texto);
-    $texto = preg_replace('/^\xEF\xBB\xBF/', '', $texto); // BOM UTF-8
-    return $texto;
-}
-
 // --- LÓGICA PHP ---
 
 // FASE 1: PROCESAMIENTO
@@ -63,130 +29,67 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['upload_csv'])) {
         if (strtolower($ext) !== 'csv') {
             $msg = "<div class='alert error'>❌ Formato incorrecto. Solo .CSV</div>";
         } else {
-            // Detectar delimitador
-            $delimitador = detectarDelimitador($_FILES['csv_file']['tmp_name']);
-            
             $handle = fopen($_FILES['csv_file']['tmp_name'], "r");
             $row_count = 0;
             $placas_vistas = [];
-            
-            while (($data = fgetcsv($handle, 10000, $delimitador)) !== FALSE) {
+            while (($data = fgetcsv($handle, 1000, ",")) !== FALSE) {
                 $row_count++;
-                
-                // Limpiar cada celda
-                $data = array_map('limpiarCelda', $data);
-                
-                // Saltar encabezados
-                if ($row_count === 1 && (stripos($data[0], 'PLACA') !== false || stripos($data[0], 'placa') !== false)) {
-                    continue;
-                }
-                
-                // Límite 100 equipos
-                if (count($preview_data) >= 100) {
-                    $msg = "<div class='alert warning'>⚠️ Límite de 100 equipos alcanzado.</div>";
-                    break;
-                }
+                if ($row_count === 1 && (stripos($data[0], 'PLACA') !== false)) continue;
+                if ($row_count > 101) break;
 
-                $placa = strtoupper(trim($data[0] ?? ''));
-                $hostname = strtoupper(trim($data[1] ?? ''));
+                $placa = trim($data[0] ?? '');
+                $hostname = trim($data[1] ?? '');
                 $adic1 = trim($data[2] ?? '');
                 $adic2 = trim($data[3] ?? '');
 
-                // Saltar filas vacías
                 if (empty($placa)) continue;
 
                 $stmt = $pdo->prepare("SELECT serial, estado_maestro FROM equipos WHERE placa_ur = ? LIMIT 1");
                 $stmt->execute([$placa]);
                 $equipo = $stmt->fetch(PDO::FETCH_ASSOC);
 
-                $status = 'valid'; 
-                $note = 'OK'; 
-                $serial = '';
+                $status = 'valid'; $note = 'OK'; $serial = '';
 
-                if (!$equipo) { 
-                    $status = 'invalid'; 
-                    $note = 'No existe en Inventario'; 
-                    $csv_errors = true; 
-                } 
-                elseif ($equipo['estado_maestro'] === 'Baja') { 
-                    $status = 'invalid'; 
-                    $note = 'Equipo en BAJA'; 
-                    $csv_errors = true; 
-                } 
-                elseif (in_array($placa, $placas_vistas)) { 
-                    $status = 'duplicated'; 
-                    $note = 'Placa repetida'; 
-                    $csv_errors = true; 
-                } 
-                else { 
-                    $serial = $equipo['serial']; 
-                    $placas_vistas[] = $placa; 
-                }
+                if (!$equipo) { $status = 'invalid'; $note = 'No existe en Inventario'; $csv_errors = true; } 
+                elseif ($equipo['estado_maestro'] === 'Baja') { $status = 'invalid'; $note = 'Equipo en BAJA'; $csv_errors = true; } 
+                elseif (in_array($placa, $placas_vistas)) { $status = 'duplicated'; $note = 'Placa repetida'; $csv_errors = true; } 
+                else { $serial = $equipo['serial']; $placas_vistas[] = $placa; }
 
-                $preview_data[] = [
-                    'placa' => $placa, 
-                    'hostname' => $hostname, 
-                    'serial' => $serial, 
-                    'adic1' => $adic1, 
-                    'adic2' => $adic2, 
-                    'status' => $status, 
-                    'note' => $note
-                ];
+                $preview_data[] = ['placa'=>$placa, 'hostname'=>$hostname, 'serial'=>$serial, 'adic1'=>$adic1, 'adic2'=>$adic2, 'status'=>$status, 'note'=>$note];
             }
             fclose($handle);
-            
-            if (count($preview_data) > 0) {
-                $step = 2;
-                if (!$msg) {
-                    $delim_name = ($delimitador == ',') ? 'coma' : (($delimitador == ';') ? 'punto y coma' : 'tabulador');
-                    $msg = "<div class='alert success'>✅ Archivo procesado. Delimitador: <strong>$delim_name</strong></div>";
-                }
-            } else {
-                $msg = "<div class='alert error'>⚠️ Archivo vacío o sin datos válidos.</div>";
-            }
+            if (count($preview_data) > 0) $step = 2;
+            else $msg = "<div class='alert error'>⚠️ Archivo vacío o inválido.</div>";
         }
     }
 }
 
-// FASE 2: GUARDADO (SIN CAMBIOS - LÓGICA ORIGINAL)
+// FASE 2: GUARDADO
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirm_save'])) {
     try {
         $items = json_decode($_POST['items_json'], true);
-        
         $stmt_l = $pdo->prepare("SELECT sede, nombre FROM lugares WHERE id = ?");
         $stmt_l->execute([$_POST['id_lugar']]);
         $l = $stmt_l->fetch();
         
         $pdo->beginTransaction();
         $serials_procesados = [];
-        
         $sql = "INSERT INTO bitacora (serial_equipo, id_lugar, sede, ubicacion, campo_adic1, campo_adic2, tipo_evento, correo_responsable, responsable_secundario, tecnico_responsable, hostname, fecha_evento, check_dlo, check_antivirus) VALUES (?, ?, ?, ?, ?, ?, 'Asignacion_Masiva', ?, ?, ?, ?, NOW(), ?, ?)";
         $stmt = $pdo->prepare($sql);
 
+        // Captura de estados de los switches
         $dlo_status = isset($_POST['check_dlo']) ? 1 : 0;
         $av_status  = isset($_POST['check_antivirus']) ? 1 : 0;
 
         foreach ($items as $item) {
             if ($item['status'] !== 'valid') continue;
-            
             $stmt->execute([
-                $item['serial'], 
-                $_POST['id_lugar'], 
-                $l['sede'], 
-                $l['nombre'], 
-                $item['adic1'], 
-                $item['adic2'],
-                $_POST['correo_resp_real'], 
-                $_POST['correo_sec_real'] ?: null, 
-                $_SESSION['nombre'],
-                strtoupper($item['hostname']), 
-                $dlo_status, 
-                $av_status
+                $item['serial'], $_POST['id_lugar'], $l['sede'], $l['nombre'], $item['adic1'], $item['adic2'],
+                $_POST['correo_resp_real'], $_POST['correo_sec_real'] ?: null, $_SESSION['nombre'],
+                strtoupper($item['hostname']), $dlo_status, $av_status
             ]);
-            
             $serials_procesados[] = $item['serial'];
         }
-        
         $pdo->commit();
 
         if (count($serials_procesados) > 0) {
@@ -194,13 +97,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirm_save'])) {
             header("Location: generar_acta_masiva.php?serials=" . urlencode($serials_str));
             exit;
         } else {
-            $msg = "<div class='alert error'>⚠️ No se procesó ningún equipo.</div>"; 
-            $step = 1;
+            $msg = "<div class='alert error'>⚠️ No se procesó ningún equipo.</div>"; $step = 1;
         }
     } catch (Exception $e) {
         if ($pdo->inTransaction()) $pdo->rollBack();
-        $msg = "<div class='alert error'>❌ Error: " . htmlspecialchars($e->getMessage()) . "</div>"; 
-        $step = 2;
+        $msg = "<div class='alert error'>❌ Error: " . $e->getMessage() . "</div>"; $step = 2;
     }
 }
 ?>
@@ -258,24 +159,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirm_save'])) {
         .instruction-box h4 { margin-top: 0; color: var(--primary); }
         .code-pill { background: #e2e8f0; padding: 3px 8px; border-radius: 4px; font-family: monospace; font-weight: bold; font-size: 0.9em; }
 
-        .tips-box {
-            background: #e7f3ff;
-            border-left: 4px solid var(--primary);
-            padding: 15px;
-            margin-top: 20px;
-            border-radius: 6px;
-        }
-        .tips-box h4 {
-            margin: 0 0 10px 0;
-            color: var(--primary);
-            font-size: 0.95rem;
-        }
-        .tips-box ul {
-            margin: 0;
-            padding-left: 20px;
-            font-size: 0.85rem;
-        }
-
         .btn-primary { 
             background: var(--primary); color: white; border: none; padding: 15px 30px; 
             border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 1rem; 
@@ -285,21 +168,19 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirm_save'])) {
         .btn-primary:hover { background: var(--primary-hover); }
 
         .alert { padding: 15px; border-radius: 8px; margin-bottom: 20px; text-align:center; font-weight:bold; }
-        .error { background: #fee2e2; color: #991b1b; border-left: 6px solid #dc2626; }
-        .success { background: #d4edda; color: #155724; border-left: 6px solid var(--success); }
-        .warning { background: #fff3cd; color: #856404; border-left: 6px solid #fbbf24; }
+        .error { background: #fee2e2; color: #991b1b; }
 
         .table-container { overflow-x: auto; margin-top: 20px; border: 1px solid var(--border); border-radius: 8px; }
         .preview-table { width: 100%; border-collapse: collapse; min-width: 600px; }
-        .preview-table th { background: #f1f5f9; padding: 12px; text-align: left; font-size: 0.85rem; text-transform: uppercase; color: #64748b; }
-        .preview-table td { padding: 10px; border-bottom: 1px solid #e2e8f0; font-size: 0.9rem; }
+        .preview-table th { background: #f1f5f9; padding: 12px; text-align: left; }
+        .preview-table td { padding: 10px; border-bottom: 1px solid #e2e8f0; }
         .row-valid { border-left: 4px solid #22c55e; background: #f0fdf4; }
         .row-invalid { border-left: 4px solid #ef4444; background: #fef2f2; }
-        .row-duplicated { border-left: 4px solid #f59e0b; background: #fffbeb; }
         
         .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; background: #f8fafc; padding: 25px; border-radius: 8px; border: 1px solid #e2e8f0; margin-top: 20px; }
-        input[type="text"], select { width: 100%; padding: 12px; border: 1px solid var(--border); border-radius: 6px; box-sizing: border-box; font-size: 0.95rem; }
+        input[type="text"], select { width: 100%; padding: 12px; border: 1px solid var(--border); border-radius: 6px; box-sizing: border-box; }
 
+        /* ESTILOS PARA LOS TOGGLES DE COMPLIANCE (Igual a movimientos) */
         .compliance-section { 
             grid-column: span 2; 
             display: flex; 
@@ -311,14 +192,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirm_save'])) {
             align-items: center; 
             justify-content: space-around; 
             margin-top: 10px;
-            flex-wrap: wrap;
         }
         .switch-container { display: flex; align-items: center; gap: 10px; }
         .switch { position: relative; display: inline-block; width: 50px; height: 26px; }
         .switch input { opacity: 0; width: 0; height: 0; }
         .slider { 
             position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; 
-            background-color: #dc3545;
+            background-color: #dc3545; /* Rojo por defecto */
             transition: .4s; border-radius: 34px; 
         }
         .slider:before { 
@@ -332,10 +212,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirm_save'])) {
         
         @media (max-width: 768px) {
             .card { padding: 20px; }
-            .header h2 { font-size: 1.4rem; }
             .form-grid { grid-template-columns: 1fr; }
             .instructions { flex-direction: column; }
-            .compliance-section { flex-direction: column; gap: 15px; align-items: flex-start; }
         }
     </style>
 </head>
@@ -367,7 +245,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirm_save'])) {
             <div class="instructions">
                 <div class="instruction-box">
                     <h4>📋 Formato Requerido</h4>
-                    <p style="font-size:0.9rem; color:#555;">El archivo CSV debe tener las siguientes columnas:</p>
+                    <p style="font-size:0.9rem; color:#555;">El archivo CSV debe tener las siguientes columnas (sin tildes):</p>
                     <div style="display:flex; gap:5px; flex-wrap:wrap;">
                         <span class="code-pill">PLACA_UR</span>
                         <span class="code-pill">HOSTNAME</span>
@@ -376,23 +254,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirm_save'])) {
                     </div>
                 </div>
                 <div class="instruction-box">
-                    <h4>💡 Tips</h4>
+                    <h4>💡 Tips "Anti-Error"</h4>
                     <ul style="padding-left:20px; font-size:0.9rem; color:#555; margin-bottom:0;">
                         <li>Máximo 100 filas por carga.</li>
-                        <li>Soporta coma, punto y coma o tabulador.</li>
-                        <li>No dejar filas vacías.</li>
+                        <li>Guardar como <b>CSV (delimitado por comas)</b>.</li>
+                        <li>No dejar filas vacías intermedias.</li>
                     </ul>
                 </div>
-            </div>
-            
-            <div class="tips-box">
-                <h4>🛡️ Protecciones Automáticas</h4>
-                <ul>
-                    <li>✅ Detección automática de delimitador (coma, punto y coma, tabulador)</li>
-                    <li>✅ Limpieza de espacios y saltos de línea</li>
-                    <li>✅ Detección de encabezados</li>
-                    <li>✅ Validación de duplicados</li>
-                </ul>
             </div>
 
             <button type="submit" name="upload_csv" id="btnUpload" class="btn-primary">
@@ -458,24 +326,15 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirm_save'])) {
             <h3>1. Validación de Datos (<?= count($preview_data) ?> registros)</h3>
             <div class="table-container">
                 <table class="preview-table">
-                    <thead>
-                        <tr>
-                            <th>Estado</th>
-                            <th>Placa</th>
-                            <th>Serial</th>
-                            <th>Hostname</th>
-                            <th>Nota</th>
-                        </tr>
-                    </thead>
+                    <thead><tr><th>Estado</th><th>Placa</th><th>Serial</th><th>Hostname</th><th>Nota</th></tr></thead>
                     <tbody>
                         <?php 
                         $validos = 0; 
                         foreach($preview_data as $row): 
                             if($row['status'] == 'valid') $validos++;
-                            $icon = $row['status'] == 'valid' ? '✅' : ($row['status'] == 'duplicated' ? '⚠️' : '❌');
                         ?>
                             <tr class="row-<?= $row['status'] ?>">
-                                <td><?= $icon ?></td>
+                                <td><?= $row['status'] == 'valid' ? '✅' : ($row['status'] == 'duplicated' ? '⚠️' : '❌') ?></td>
                                 <td><?= htmlspecialchars($row['placa']) ?></td>
                                 <td><?= htmlspecialchars($row['serial']) ?></td>
                                 <td><?= htmlspecialchars($row['hostname']) ?></td>
@@ -490,19 +349,16 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirm_save'])) {
             <div class="form-grid">
                 <div>
                     <label style="font-weight:bold; display:block; margin-bottom:5px;">Sede Destino</label>
-                    <select id="selectSede" required>
-                        <option value="">-- Seleccionar --</option>
-                        <?php 
-                        $sedes = array_unique(array_column($lugares, 'sede')); 
-                        foreach($sedes as $s) echo "<option value='" . htmlspecialchars($s) . "'>" . htmlspecialchars($s) . "</option>"; 
-                        ?>
+                    <select id="selectSede" required><option value="">-- Seleccionar --</option>
+                    <?php 
+                    $sedes = array_unique(array_column($lugares, 'sede')); 
+                    foreach($sedes as $s) echo "<option value='$s'>$s</option>"; 
+                    ?>
                     </select>
                 </div>
                 <div>
                     <label style="font-weight:bold; display:block; margin-bottom:5px;">Ubicación Específica</label>
-                    <select id="selectLugar" name="id_lugar" required disabled>
-                        <option value="">-- Elija Sede --</option>
-                    </select>
+                    <select id="selectLugar" name="id_lugar" required disabled><option value="">-- Elija Sede --</option></select>
                 </div>
                 <div style="grid-column: span 2;">
                     <label style="font-weight:bold; display:block; margin-bottom:5px;">👤 Responsable Principal (LDAP)</label>
@@ -522,7 +378,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirm_save'])) {
                         <input type="text" id="user_id_sec" placeholder="nombre.apellido">
                         <button type="button" onclick="verificarUsuarioOpcional()" style="background:#64748b; color:white; border:none; padding:10px 20px; border-radius:6px; cursor:pointer;">🔍</button>
                     </div>
-                    <div id="userCard_sec" style="margin-top:10px; padding:10px; background:#f1f5f9; border-radius:6px; display:none;">
+                     <div id="userCard_sec" style="margin-top:10px; padding:10px; background:#f1f5f9; border-radius:6px; display:none;">
                         <h4 id="ldap_nombre_sec" style="margin:0; color:#444;"></h4>
                         <div id="ldap_info_sec" style="font-size:0.85rem; color:#666;"></div>
                     </div>
@@ -552,12 +408,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirm_save'])) {
 
             <input type="hidden" name="items_json" value='<?= json_encode($preview_data) ?>'>
             
-            <div style="display:flex; gap:20px; margin-top:30px; flex-wrap:wrap;">
-                <a href="asignacion_masiva.php" style="flex:1; min-width:200px; text-align:center; padding:15px; background:#64748b; color:white; text-decoration:none; border-radius:8px; font-weight:bold;">CANCELAR</a>
+            <div style="display:flex; gap:20px; margin-top:30px;">
+                <a href="asignacion_masiva.php" style="flex:1; text-align:center; padding:15px; background:#64748b; color:white; text-decoration:none; border-radius:8px; font-weight:bold;">CANCELAR</a>
                 <?php if ($validos > 0): ?>
-                    <button type="submit" name="confirm_save" id="btnSubmit" style="flex:2; min-width:250px; background:var(--primary); color:white; border:none; padding:15px; border-radius:8px; font-weight:bold; cursor:pointer;" disabled>CONFIRMAR (<?= $validos ?> Equipos)</button>
+                    <button type="submit" name="confirm_save" id="btnSubmit" style="flex:2; background:var(--primary); color:white; border:none; padding:15px; border-radius:8px; font-weight:bold; cursor:pointer;" disabled>CONFIRMAR (<?= $validos ?> Equipos)</button>
                 <?php else: ?>
-                    <div class="alert error" style="flex:2; min-width:250px; margin:0;">No hay equipos válidos</div>
+                    <div class="alert error" style="flex:2; margin:0;">No hay equipos válidos</div>
                 <?php endif; ?>
             </div>
         </form>
