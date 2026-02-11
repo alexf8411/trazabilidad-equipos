@@ -1,13 +1,13 @@
 <?php
 /**
  * public/importar_csv.php
- * Importación masiva - Versión V1.8 URTRACK (Revisión Profesional)
- * Ajustes: Normalización de ENUM, Sincronización de Eventos y UI Institucional.
+ * Versión V1.9.1 URTRACK - Fase 3: Registro Maestro
+ * Revisión: Integridad de DB + UI Institucional Responsive
  */
 require_once '../core/db.php';
 require_once '../core/session.php';
 
-// 1. SEGURIDAD Y CONFIGURACIÓN
+// 1. SEGURIDAD Y PERFORMANCE
 set_time_limit(600); 
 ini_set('memory_limit', '2G'); 
 
@@ -17,10 +17,12 @@ if (!in_array($_SESSION['rol'], ['Administrador', 'Recursos'])) {
 }
 
 /**
- * Procesa cada fila con normalización de datos para evitar errores de truncado
+ * Procesa cada fila validando el delimitador ";" y el mapeo de tablas
  */
-function procesarFila($data, $stmt_eq, $stmt_bit, $bodega, &$exitos) {
-    if (count($data) < 8) return;
+function procesarFila($data, $stmt_eq, $stmt_bit, $bodega, &$exitos, &$errores_filas) {
+    if (count($data) < 8) {
+        return; // Fila vacía o mal formada
+    }
 
     // Limpieza y Normalización
     $serial    = strtoupper(trim($data[0])); 
@@ -31,39 +33,57 @@ function procesarFila($data, $stmt_eq, $stmt_bit, $bodega, &$exitos) {
     $precio    = (float) trim($data[5]);
     $raw_fecha = trim($data[6]);
     
-    // Solución al error 'Data truncated': Normalizamos a CamelCase
-    $modalidad_raw = strtolower(trim($data[7]));
-    $modalidad = ucfirst($modalidad_raw); // convierte 'leasing' en 'Leasing'
+    // Normalización para ENUM de la base de datos
+    $modalidad_input = strtolower(trim($data[7]));
+    $modalidad = ucfirst($modalidad_input); // Convierte 'leasing' a 'Leasing'
 
     if (empty($serial) || empty($placa)) return;
     
-    // Fechas
+    // Gestión de Fechas (Soporta DD/MM/YYYY o YYYY-MM-DD)
     $fecha_evento = date('Y-m-d H:i:s');
     $fecha_normalizada = str_replace(['/', '.'], '-', $raw_fecha);
     $timestamp = strtotime($fecha_normalizada);
     $fecha_compra = ($timestamp) ? date('Y-m-d', $timestamp) : date('Y-m-d');
 
-    // Ejecución Atómica
-    $stmt_eq->execute([$placa, $serial, $marca, $modelo, $vida_util, $precio, $fecha_compra, $modalidad]);
-    
-    $stmt_bit->execute([
-        $serial, 
-        $bodega['id'], 
-        $bodega['sede'], 
-        $bodega['nombre'], 
-        'Alta',             // Evento actualizado Fase 3
-        $_SESSION['usuario'], 
-        $fecha_evento, 
-        $_SESSION['usuario'], 
-        $serial
-    ]);
-    
-    $exitos++;
+    try {
+        // Ejecución Atómica 1: Crear la Hoja de Vida del Equipo
+        $stmt_eq->execute([
+            $serial, 
+            $placa, 
+            $marca, 
+            $modelo, 
+            $vida_util, 
+            $precio, 
+            $fecha_compra, 
+            $modalidad
+        ]);
+        
+        // Ejecución Atómica 2: Registrar primer evento en Bitácora (Alta)
+        $stmt_bit->execute([
+            $serial,              // serial_equipo
+            $bodega['id'],        // id_lugar
+            'PENDIENTE',          // hostname (manual en Fase 4)
+            $bodega['sede'],      // sede
+            $bodega['nombre'],    // ubicacion (Bodega de Tecnología)
+            $_SESSION['usuario'], // correo_responsable
+            0,                    // equipo_adic (False por defecto)
+            'Alta',               // tipo_evento (ENUM)
+            $_SESSION['usuario']  // tecnico_responsable
+        ]);
+        
+        $exitos++;
+    } catch (PDOException $e) {
+        if ($e->getCode() == '23000') {
+            $errores_filas[] = "Duplicado: Serial $serial o Placa $placa ya existen en el sistema.";
+        } else {
+            $errores_filas[] = "Error SQL en $serial: " . $e->getMessage();
+        }
+    }
 }
 
 $errores = [];
-$exitos = 0;
 $mensaje_exito = "";
+$exitos = 0;
 
 if (isset($_POST['importar'])) {
     if (!isset($_FILES['archivo_csv']) || $_FILES['archivo_csv']['error'] !== UPLOAD_ERR_OK) {
@@ -71,38 +91,43 @@ if (isset($_POST['importar'])) {
     } else {
         $archivo = $_FILES['archivo_csv']['tmp_name'];
         try {
-            // Buscamos la Bodega de Tecnología como punto de entrada universal
+            // Buscamos la Bodega de Tecnología como punto de entrada obligatorio
             $stmt_bodega = $pdo->prepare("SELECT id, sede, nombre FROM lugares WHERE nombre = 'Bodega de Tecnología' LIMIT 1");
             $stmt_bodega->execute();
             $bodega = $stmt_bodega->fetch(PDO::FETCH_ASSOC);
 
-            if (!$bodega) throw new Exception("Configuración faltante: No existe 'Bodega de Tecnología' en la tabla lugares.");
+            if (!$bodega) throw new Exception("Configuración Crítica: No existe 'Bodega de Tecnología' en la tabla lugares.");
 
             $handle = fopen($archivo, "r");
             $pdo->beginTransaction();
 
-            $stmt_eq = $pdo->prepare("INSERT INTO equipos (placa_ur, serial, marca, modelo, vida_util, precio, fecha_compra, modalidad, estado_maestro) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Alta')");
-            $stmt_bit = $pdo->prepare("INSERT INTO bitacora (serial_equipo, id_lugar, sede, ubicacion, tipo_evento, correo_responsable, fecha_evento, tecnico_responsable, hostname) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            // SQL preparado según el DESCRIBE de tus tablas
+            $stmt_eq = $pdo->prepare("INSERT INTO equipos (serial, placa_ur, marca, modelo, vida_util, precio, fecha_compra, modalidad, estado_maestro) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Alta')");
+            
+            $stmt_bit = $pdo->prepare("INSERT INTO bitacora (serial_equipo, id_lugar, hostname, sede, ubicacion, correo_responsable, equipo_adic, tipo_evento, tecnico_responsable) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
 
-            $primera_fila = fgetcsv($handle, 1000, ",");
-            // Saltar cabecera si existe
+            // Procesar cabecera (Detectar si la primera fila es texto)
+            $primera_fila = fgetcsv($handle, 1000, ";");
             if ($primera_fila) {
-                if (!in_array(strtolower(trim($primera_fila[0])), ['serial', 'sn', 'placa'])) {
-                    procesarFila($primera_fila, $stmt_eq, $stmt_bit, $bodega, $exitos);
+                // Si la primera columna contiene letras y no es un serial largo, asumimos que es cabecera
+                if (!preg_match('/[0-9]/', $primera_fila[0])) {
+                    // Es cabecera, se salta
+                } else {
+                    procesarFila($primera_fila, $stmt_eq, $stmt_bit, $bodega, $exitos, $errores);
                 }
             }
 
-            while (($data = fgetcsv($handle, 1000, ",")) !== FALSE) {
-                procesarFila($data, $stmt_eq, $stmt_bit, $bodega, $exitos);
+            // Procesar el resto del archivo
+            while (($data = fgetcsv($handle, 1000, ";")) !== FALSE) {
+                procesarFila($data, $stmt_eq, $stmt_bit, $bodega, $exitos, $errores);
             }
             
             $pdo->commit();
-            $mensaje_exito = "Se han procesado e ingresado <strong>$exitos</strong> equipos a Bodega exitosamente.";
+            if ($exitos > 0) {
+                $mensaje_exito = "Se han procesado e ingresado <strong>$exitos</strong> equipos a Bodega exitosamente.";
+            }
             fclose($handle);
 
-        } catch (PDOException $e) {
-            if ($pdo->inTransaction()) $pdo->rollBack();
-            $errores[] = ($e->getCode() == '23000') ? "Error: Placa o Serial duplicado en el archivo." : "Error SQL: " . $e->getMessage();
         } catch (Exception $e) {
             if ($pdo->inTransaction()) $pdo->rollBack();
             $errores[] = $e->getMessage();
@@ -110,7 +135,6 @@ if (isset($_POST['importar'])) {
     }
 }
 ?>
-
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -118,7 +142,7 @@ if (isset($_POST['importar'])) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Carga Masiva - URTRACK</title>
     <style>
-        :root { --primary: #002D72; --accent: #ffc107; --bg: #f8f9fa; --success: #28a745; }
+        :root { --primary: #002D72; --accent: #ffc107; --bg: #f8f9fa; --success: #28a745; --danger: #dc3545; }
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: var(--bg); margin: 0; padding: 20px; color: #333; }
         .container { max-width: 1000px; margin: 0 auto; }
         
@@ -130,13 +154,12 @@ if (isset($_POST['importar'])) {
         .instruction-banner { background: #e7f1ff; border: 1px solid #b6d4fe; padding: 20px; border-radius: 8px; margin-bottom: 25px; }
         .instruction-banner h3 { margin-top: 0; color: #084298; font-size: 1.1rem; }
         
-        /* Tabla de ejemplo Responsive */
         .table-wrapper { overflow-x: auto; margin: 15px 0; border-radius: 8px; border: 1px solid #dee2e6; }
         table { width: 100%; border-collapse: collapse; background: white; min-width: 700px; }
         th { background: #f1f3f5; padding: 12px; text-align: left; font-size: 0.85rem; text-transform: uppercase; border-bottom: 2px solid #dee2e6; }
         td { padding: 12px; font-size: 0.9rem; border-bottom: 1px solid #eee; }
 
-        .alert { padding: 15px; border-radius: 6px; margin-bottom: 20px; border-left: 5px solid; }
+        .alert { padding: 15px; border-radius: 6px; margin-bottom: 20px; border-left: 5px solid; font-size: 0.95rem; }
         .alert-success { background: #d4edda; color: #155724; border-color: #28a745; }
         .alert-error { background: #f8d7da; color: #721c24; border-color: #dc3545; }
 
@@ -163,21 +186,28 @@ if (isset($_POST['importar'])) {
 <div class="container">
     <div class="header-box">
         <h1>📥 Carga Masiva de Activos</h1>
-        <a href="alta_equipos.php" class="btn-back">⬅ Volver al registro individual</a>
+        <a href="dashboard.php" class="btn-back">⬅ Volver al Panel</a>
     </div>
 
     <?php if ($mensaje_exito): ?>
         <div class="alert alert-success">✅ <?= $mensaje_exito ?></div>
     <?php endif; ?>
 
-    <?php foreach ($errores as $error): ?>
-        <div class="alert alert-error">⚠️ <?= $error ?></div>
-    <?php endforeach; ?>
+    <?php if (!empty($errores)): ?>
+        <div class="alert alert-error">
+            <strong>Se encontraron los siguientes problemas:</strong>
+            <ul style="margin: 10px 0 0 20px; padding: 0;">
+                <?php foreach ($errores as $error): ?>
+                    <li><?= $error ?></li>
+                <?php endforeach; ?>
+            </ul>
+        </div>
+    <?php endif; ?>
 
     <div class="card">
         <div class="instruction-banner">
-            <h3>📖 Requerimiento de Formato CSV</h3>
-            <p style="font-size: 0.9rem; margin-bottom: 10px;">Para garantizar la integridad, el archivo debe contener 8 columnas en el siguiente orden estricto:</p>
+            <h3>📖 Requerimiento de Formato CSV (Excel)</h3>
+            <p style="font-size: 0.9rem; margin-bottom: 10px;">El archivo debe usar <strong>Punto y Coma (;)</strong> como separador y tener este orden:</p>
             
             <div class="table-wrapper">
                 <table>
@@ -195,30 +225,30 @@ if (isset($_POST['importar'])) {
                     </thead>
                     <tbody>
                         <tr>
-                            <td>5CD240JL01</td>
-                            <td>004589</td>
-                            <td>HP</td>
-                            <td>ProBook 440</td>
+                            <td>SNAPL200000</td>
+                            <td>121180</td>
+                            <td>Apple</td>
+                            <td>MacBook Pro 14</td>
                             <td>5</td>
-                            <td>3850000</td>
-                            <td>25/10/2023</td>
-                            <td>Leasing</td>
+                            <td>8500000</td>
+                            <td>15/01/2025</td>
+                            <td>Propio</td>
                         </tr>
                     </tbody>
                 </table>
             </div>
-            <p style="font-size: 0.8rem; color: #555;">* Formatos de fecha aceptados: 25/10/2023 o 2023-10-25. Modalidades válidas: Propio, Leasing, Proyecto.</p>
+            <p style="font-size: 0.8rem; color: #555;">* Formatos de fecha: 15/01/2025 o 2025-01-15. Modalidades: Propio, Leasing, Proyecto.</p>
         </div>
 
-        <form method="POST" enctype="multipart/form-data">
+        <form method="POST" enctype="multipart/form-data" id="uploadForm">
             <div class="file-upload-area" onclick="document.getElementById('archivo_csv').click();">
                 <input type="file" name="archivo_csv" id="archivo_csv" accept=".csv" required onchange="updateFileName(this)">
                 <span class="file-label" id="file-name-label">
-                    Arrastra aquí tu archivo o <strong>haz clic para buscar</strong>
+                    Arrastra aquí tu archivo CSV o <strong>haz clic para buscar</strong>
                 </span>
             </div>
             
-            <button type="submit" name="importar" class="btn-action">🚀 INICIAR CARGA A BODEGA</button>
+            <button type="submit" name="importar" class="btn-action" id="submitBtn">🚀 INICIAR CARGA A BODEGA</button>
         </form>
     </div>
 </div>
@@ -228,6 +258,13 @@ function updateFileName(input) {
     const fileName = input.files[0] ? input.files[0].name : "Arrastra aquí tu archivo o haz clic para buscar";
     document.getElementById('file-name-label').innerHTML = "Archivo seleccionado: <strong>" + fileName + "</strong>";
 }
+
+// Prevenir múltiples envíos
+document.getElementById('uploadForm').onsubmit = function() {
+    document.getElementById('submitBtn').innerHTML = "Procesando registros... por favor espere";
+    document.getElementById('submitBtn').style.opacity = "0.7";
+    document.getElementById('submitBtn').disabled = true;
+};
 </script>
 
 </body>
