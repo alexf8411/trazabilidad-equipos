@@ -1,7 +1,7 @@
 <?php
 /**
  * public/asignacion_masiva.php
- * Versión Responsive y Modularizada
+ * Versión Corregida: Estructura HTML compatible con verificar_ldap.js
  */
 require_once '../core/db.php';
 require_once '../core/session.php';
@@ -101,20 +101,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirm_save'])) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Asignación Masiva | URTRACK</title>
-    <link rel="stylesheet" href="css/style.css"> <style>
+    <style>
         :root { --primary: #4f46e5; --success: #22c55e; --error: #ef4444; --warning: #f59e0b; --bg: #f8fafc; }
         body { font-family: 'Segoe UI', sans-serif; background: var(--bg); padding: 20px; margin: 0; }
         
-        /* Contenedor Principal Responsive */
         .card { 
-            background: white; 
-            padding: 30px; 
-            border-radius: 12px; 
-            box-shadow: 0 4px 20px rgba(0,0,0,0.05); 
-            max-width: 1000px; 
-            margin: auto; 
-            width: 100%;
-            box-sizing: border-box; /* Importante para padding */
+            background: white; padding: 30px; border-radius: 12px; 
+            box-shadow: 0 4px 20px rgba(0,0,0,0.05); max-width: 1000px; 
+            margin: auto; width: 100%; box-sizing: border-box;
         }
 
         .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid var(--primary); padding-bottom: 15px; margin-bottom: 25px; }
@@ -124,41 +118,26 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirm_save'])) {
         .error { background: #fee2e2; color: #991b1b; }
         .success { background: #dcfce7; color: #166534; }
 
-        /* Tabla Responsive con Scroll Horizontal */
-        .table-container {
-            width: 100%;
-            overflow-x: auto; /* Permite scroll en móviles */
-            border: 1px solid #e2e8f0;
-            margin-top: 20px;
-            border-radius: 6px;
-        }
-        .preview-table { width: 100%; border-collapse: collapse; min-width: 600px; /* Fuerza el ancho mínimo */ }
+        .table-container { width: 100%; overflow-x: auto; border: 1px solid #e2e8f0; margin-top: 20px; border-radius: 6px; }
+        .preview-table { width: 100%; border-collapse: collapse; min-width: 600px; }
         .preview-table th { background: #f1f5f9; padding: 12px; text-align: left; font-size: 0.9rem; }
         .preview-table td { padding: 10px; border-bottom: 1px solid #e2e8f0; font-size: 0.9rem; }
         .row-valid { border-left: 4px solid var(--success); background: #f0fdf4; }
         .row-invalid { border-left: 4px solid var(--error); background: #fef2f2; }
         .row-duplicated { border-left: 4px solid var(--warning); background: #fffbeb; }
 
-        /* Grid del Formulario (Responsive) */
         .form-grid { 
-            display: grid; 
-            grid-template-columns: 1fr 1fr; /* Desktop: 2 columnas */
-            gap: 20px; 
-            background: #f8fafc; 
-            padding: 25px; 
-            border-radius: 8px; 
-            border: 1px solid #e2e8f0; 
+            display: grid; grid-template-columns: 1fr 1fr; gap: 20px; 
+            background: #f8fafc; padding: 25px; border-radius: 8px; border: 1px solid #e2e8f0; 
         }
 
         input[type="text"], select, input[type="file"] { width: 100%; padding: 12px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; }
         .label-sm { display: block; font-size: 0.75rem; color: #64748b; text-transform: uppercase; font-weight: 700; margin-bottom: 8px; }
 
-        /* Botones */
         .action-buttons { display: flex; gap: 20px; margin-top: 25px; }
-        .btn-primary { background: var(--primary); color: white; border: none; padding: 15px; border-radius: 6px; cursor: pointer; font-weight: bold; width: 100%; font-size: 1rem; }
+        .btn-primary { background: var(--primary); color: white; border: none; padding: 15px; border-radius: 6px; cursor: pointer; font-weight: bold; width: 100%; font-size: 1rem; opacity: 0.5; cursor: not-allowed; transition: all 0.3s; }
         .btn-cancel { background: #64748b; color: white; padding: 15px; border-radius: 6px; text-decoration: none; text-align: center; display: flex; align-items: center; justify-content: center; font-weight: bold; }
 
-        /* Switches */
         .switch-container { display: flex; align-items: center; gap: 10px; }
         .switch { position: relative; display: inline-block; width: 44px; height: 24px; }
         .switch input { opacity: 0; width: 0; height: 0; }
@@ -167,22 +146,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirm_save'])) {
         input:checked + .slider { background-color: var(--success); }
         input:checked + .slider:before { transform: translateX(20px); }
 
-        /* --- RESPONSIVE MEDIA QUERIES --- */
         @media (max-width: 768px) {
             .card { padding: 20px; }
-            .form-grid { 
-                grid-template-columns: 1fr; /* Colapsar a 1 columna */
-                padding: 15px;
-            }
-            .ldap-group, .checks-group { 
-                grid-column: span 1 !important; /* Forzar que ocupen solo 1 columna */
-            }
-            .action-buttons { 
-                flex-direction: column; /* Botones uno encima del otro */
-                gap: 10px;
-            }
+            .form-grid { grid-template-columns: 1fr; padding: 15px; }
+            .ldap-group, .checks-group { grid-column: span 1 !important; }
+            .action-buttons { flex-direction: column; gap: 10px; }
             .btn-cancel, .btn-primary { width: 100%; }
-            .checks-group { flex-direction: column; align-items: flex-start; gap: 15px; }
         }
     </style>
 </head>
@@ -204,7 +173,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirm_save'])) {
             <form method="POST" enctype="multipart/form-data">
                 <input type="file" name="csv_file" accept=".csv" required style="max-width:300px;">
                 <br><br>
-                <button type="submit" name="upload_csv" class="btn-primary" style="width: auto; padding: 12px 30px;">📂 Analizar Archivo</button>
+                <button type="submit" name="upload_csv" class="btn-primary" style="width: auto; padding: 12px 30px; opacity: 1; cursor: pointer;">📂 Analizar Archivo</button>
             </form>
         </div>
     <?php endif; ?>
@@ -257,9 +226,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirm_save'])) {
                     <label class="label-sm">👤 Responsable Principal (LDAP)</label>
                     <div style="display:flex; gap:10px;">
                         <input type="text" id="user_id" placeholder="nombre.apellido">
-                        <button type="button" onclick="verificarUsuario()" class="btn-primary" style="width:auto; padding: 0 15px;">🔍</button>
+                        <button type="button" onclick="verificarUsuario()" class="btn-primary" style="width:auto; padding: 0 15px; opacity:1; cursor:pointer;">🔍</button>
                     </div>
-                    <div id="userCard" style="font-size:0.85rem; color:var(--success); margin-top:5px; font-weight:600;"></div>
+                    
+                    <div id="userCard" class="user-card" style="margin-top:10px;">
+                        <h4 id="ldap_nombre" style="margin:0; color:var(--primary);"></h4>
+                        <div id="ldap_info" style="font-size:0.85rem; color:#666;"></div>
+                    </div>
                     <input type="hidden" name="correo_resp_real" id="correo_resp_real" required>
                 </div>
 
@@ -269,7 +242,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirm_save'])) {
                         <input type="text" id="user_id_sec" placeholder="nombre.apellido">
                         <button type="button" onclick="verificarUsuarioOpcional()" style="background:#64748b; color:white; border:none; border-radius:6px; cursor:pointer; padding:0 15px;">🔍</button>
                     </div>
-                    <div id="userCard_sec" style="font-size:0.85rem; color:#666; margin-top:5px;"></div>
+                    
+                    <div id="userCard_sec" class="user-card" style="margin-top:10px;">
+                        <h4 id="ldap_nombre_sec" style="margin:0; color:#444;"></h4>
+                        <div id="ldap_info_sec" style="font-size:0.85rem; color:#666;"></div>
+                    </div>
                     <input type="hidden" name="correo_sec_real" id="correo_sec_real">
                 </div>
 
@@ -291,7 +268,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirm_save'])) {
                 <a href="asignacion_masiva.php" class="btn-cancel" style="flex:1;">CANCELAR</a>
                 <?php if ($validos > 0): ?>
                     <button type="submit" name="confirm_save" id="btnSubmit" class="btn-primary" style="flex:2;" disabled>
-                        CONFIRMAR (<?= $validos ?> Equipos)
+                        CONFIRMAR (<?= $validos ?> Equipos) 🔒
                     </button>
                 <?php else: ?>
                     <div class="alert error" style="flex:2; margin:0;">No hay equipos válidos</div>
@@ -300,10 +277,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirm_save'])) {
         </form>
 
         <script>const URTRACK_LUGARES = <?= json_encode($lugares) ?>;</script>
-              
+        
         <script src="js/verificar_ldap.js"></script>
         <script src="js/verificar_ldap_opcional.js"></script>
-
         <script src="js/asignacion_masiva.js"></script>
     <?php endif; ?>
 </div>
