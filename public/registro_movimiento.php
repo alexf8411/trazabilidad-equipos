@@ -2,6 +2,7 @@
 /**
  * public/registro_movimiento.php
  * Versión Consolidada: Bloqueo Bajas, Campos Adicionales y Dual LDAP
+ * + Compliance Checks (DLO y Antivirus)
  */
 require_once '../core/db.php';
 require_once '../core/session.php';
@@ -54,12 +55,17 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirmar'])) {
         $stmt_l->execute([$_POST['id_lugar']]);
         $l = $stmt_l->fetch();
 
+        // Validar Checks (Si el checkbox no se marca, no se envía en POST, asumimos 0)
+        $dlo_status = isset($_POST['check_dlo']) ? 1 : 0;
+        $av_status  = isset($_POST['check_antivirus']) ? 1 : 0;
+
         $sql = "INSERT INTO bitacora (
                     serial_equipo, id_lugar, sede, ubicacion, 
                     campo_adic1, campo_adic2,
                     tipo_evento, correo_responsable, responsable_secundario, tecnico_responsable, 
-                    hostname, fecha_evento
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())";
+                    hostname, fecha_evento,
+                    check_dlo, check_antivirus
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?)";
         
         $pdo->prepare($sql)->execute([
             $_POST['serial'], 
@@ -72,7 +78,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirmar'])) {
             $_POST['correo_resp_real'],           // Principal
             $_POST['correo_sec_real'] ?: null,    // Secundario
             $_SESSION['nombre'], 
-            strtoupper($_POST['hostname'])
+            strtoupper($_POST['hostname']),
+            $dlo_status,     // Nuevo Campo DLO
+            $av_status       // Nuevo Campo Antivirus
         ]);
 
         $pdo->commit();
@@ -96,7 +104,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirmar'])) {
         .card { background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.05); max-width: 900px; margin: auto; }
         .header { display: flex; justify-content: space-between; border-bottom: 2px solid var(--primary); padding-bottom: 15px; margin-bottom: 30px; }
         .search-section { display: flex; gap: 10px; margin-bottom: 30px; background: #f1f5f9; padding: 20px; border-radius: 8px; }
-        input, select { padding: 12px; border: 1px solid #cbd5e1; border-radius: 6px; width: 100%; box-sizing: border-box; }
+        input[type="text"], select { padding: 12px; border: 1px solid #cbd5e1; border-radius: 6px; width: 100%; box-sizing: border-box; }
         .info-pill { background: #f8fafc; padding: 20px; border-radius: 8px; margin-bottom: 25px; display: grid; grid-template-columns: 1fr 1fr; gap: 15px; border-left: 5px solid var(--primary); }
         .current-status-box { grid-column: span 2; background: #fff7ed; border: 1px solid #fed7aa; padding: 10px; border-radius: 6px; margin-top: 10px; }
         .label-sm { display: block; font-size: 0.7rem; color: var(--text-secondary); text-transform: uppercase; font-weight: 700; margin-bottom: 5px; }
@@ -106,6 +114,18 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirmar'])) {
         .alert { padding: 15px; border-radius: 8px; margin-bottom: 20px; }
         .error { background: #fee2e2; color: #991b1b; }
         .ldap-group { background: #fcfcfc; border: 1px solid #eee; padding: 20px; border-radius: 8px; margin-top: 15px; }
+
+        /* ESTILOS PARA LOS TOGGLES DE COMPLIANCE */
+        .compliance-section { grid-column: span 2; display: flex; gap: 20px; background: #f0fdf4; border: 1px solid #bbf7d0; padding: 15px; border-radius: 8px; align-items: center; justify-content: space-around; }
+        .switch-container { display: flex; align-items: center; gap: 10px; }
+        .switch { position: relative; display: inline-block; width: 50px; height: 26px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; border-radius: 34px; }
+        .slider:before { position: absolute; content: ""; height: 20px; width: 20px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
+        input:checked + .slider { background-color: var(--success); }
+        input:focus + .slider { box-shadow: 0 0 1px var(--success); }
+        input:checked + .slider:before { transform: translateX(24px); }
+        .switch-label { font-weight: bold; color: #166534; font-size: 0.9rem; }
     </style>
 </head>
 <body>
@@ -146,6 +166,26 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirmar'])) {
                         <option value="Asignación">Asignación</option>
                         <option value="Devolución">Devolución</option>
                     </select>
+                </div>
+                
+                <div class="compliance-section">
+                    <span style="font-size:0.8rem; text-transform:uppercase; color:#166534; font-weight:bold;">🛡️ Verificación de Seguridad</span>
+                    
+                    <div class="switch-container">
+                        <label class="switch">
+                            <input type="checkbox" name="check_dlo" value="1" checked>
+                            <span class="slider"></span>
+                        </label>
+                        <span class="switch-label">Agente DLO/Backup</span>
+                    </div>
+
+                    <div class="switch-container">
+                        <label class="switch">
+                            <input type="checkbox" name="check_antivirus" value="1" checked>
+                            <span class="slider"></span>
+                        </label>
+                        <span class="switch-label">Antivirus Corp.</span>
+                    </div>
                 </div>
                 
                 <div>

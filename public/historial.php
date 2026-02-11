@@ -4,7 +4,7 @@
  * Hoja de Vida y Trazabilidad del Activo - Versión V2.5
  * Mejoras: 
  * - Corrección campo 'precio'.
- * - Diseño Responsive.
+ * - Visualización de Compliance (DLO/AV).
  * - Scroll vertical en historial extenso.
  */
 require_once '../core/db.php';
@@ -50,7 +50,7 @@ try {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Historial - <?= htmlspecialchars($serial) ?></title>
     <style>
-        :root { --primary: #002D72; --accent: #ffc107; --bg: #f4f6f9; --success: #28a745; }
+        :root { --primary: #002D72; --accent: #ffc107; --bg: #f4f6f9; --success: #28a745; --danger: #dc3545; }
         body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); margin: 0; padding: 20px; color: #333; }
         .container { max-width: 900px; margin: 0 auto; }
         
@@ -77,14 +77,12 @@ try {
         
         /* CONTENEDOR CON SCROLL PARA LA LÍNEA DE TIEMPO */
         .timeline-container {
-            max-height: 400px; /* Altura máxima antes de hacer scroll */
+            max-height: 500px; /* Altura máxima antes de hacer scroll */
             overflow-y: auto;  /* Activa la barra de desplazamiento */
             padding-right: 10px; /* Espacio para que la barra no tape contenido */
-            scrollbar-width: thin; /* Firefox: barra delgada */
-            scrollbar-color: #cbd5e1 #f4f6f9; /* Firefox: colores */
+            scrollbar-width: thin; 
+            scrollbar-color: #cbd5e1 #f4f6f9;
         }
-
-        /* Estilos para Webkit (Chrome, Safari, Edge) Scrollbar */
         .timeline-container::-webkit-scrollbar { width: 8px; }
         .timeline-container::-webkit-scrollbar-track { background: #f4f6f9; }
         .timeline-container::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 4px; }
@@ -106,21 +104,20 @@ try {
         .event-details { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 0.9rem; }
         .badge { background: #ebf3ff; color: #004085; padding: 2px 8px; border-radius: 4px; font-weight: bold; font-size: 0.8rem; }
         
+        /* Compliance Badges */
+        .comp-badge { font-size: 0.75rem; padding: 3px 8px; border-radius: 12px; font-weight: bold; display: inline-flex; align-items: center; gap: 4px; margin-right: 5px; }
+        .comp-ok { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
+        .comp-fail { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; }
+
         .obs-box { 
             grid-column: 1 / -1; background: #f8fafc; padding: 12px; border-radius: 6px; 
             border-left: 4px solid #cbd5e1; margin-top: 10px; font-size: 0.85rem;
         }
 
-        /* --- MEDIA QUERIES (RESPONSIVE) --- */
         @media (max-width: 768px) {
             body { padding: 10px; }
-            
-            /* Ficha técnica en 1 sola columna */
             .info-card { grid-template-columns: 1fr; gap: 15px; }
-            
-            /* Detalles del evento en 1 sola columna */
             .event-details { grid-template-columns: 1fr; }
-            
             .timeline { padding-left: 25px; }
             .event-card::before { left: -21px; width: 10px; height: 10px; border-width: 2px; }
             .timeline::before { left: 9px; width: 2px; }
@@ -173,6 +170,20 @@ try {
                     <div><strong>👤 Responsable:</strong> <span style="word-break: break-all;"><?= htmlspecialchars($ev['correo_responsable']) ?></span></div>
                     <div><strong>🖥️ Hostname:</strong> <span class="badge"><?= htmlspecialchars($ev['hostname'] ?? 'N/A') ?></span></div>
                     <div><strong>🛠️ Asignado por:</strong> <?= htmlspecialchars($ev['tecnico_responsable']) ?></div>
+
+                    <div style="grid-column: 1 / -1; margin-top:5px;">
+                        <?php if($ev['check_dlo']): ?>
+                            <span class="comp-badge comp-ok">✅ DLO OK</span>
+                        <?php else: ?>
+                            <span class="comp-badge comp-fail">⚠️ Sin DLO</span>
+                        <?php endif; ?>
+
+                        <?php if($ev['check_antivirus']): ?>
+                            <span class="comp-badge comp-ok">✅ AV OK</span>
+                        <?php else: ?>
+                            <span class="comp-badge comp-fail">⚠️ Sin AV</span>
+                        <?php endif; ?>
+                    </div>
 
                     <?php if(!empty($ev['responsable_secundario']) || !empty($ev['campo_adic1']) || !empty($ev['campo_adic2'])): ?>
                     <div class="obs-box">
