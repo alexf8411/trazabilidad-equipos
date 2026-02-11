@@ -121,5 +121,37 @@ if (!$socket) {
         echo "<strong>Solución:</strong> Si usas Office 365, asegúrate de que 'Authenticated SMTP' esté habilitado en el usuario y estés usando una App Password si tienes MFA.";
     }
     fclose($socket);
+    
+    // Autenticar (LOGIN plain)
+    fputs($socket, "AUTH LOGIN\r\n");
+    $prompt_user = fgets($socket, 515);
+    echo "Paso 1 (Solicitud User): $prompt_user <br>";
+
+    // Enviar Usuario
+    fputs($socket, base64_encode($smtp_user) . "\r\n");
+    $prompt_pass = fgets($socket, 515);
+    echo "Paso 2 (Solicitud Pass o Error): $prompt_pass <br>";
+
+    // Analizar si el Paso 2 fue un error
+    if (strpos($prompt_pass, '334') === false) {
+        echo "<h4 style='color:red'>❌ EL ERROR ESTÁ EN EL USUARIO</h4>";
+        echo "El servidor rechazó el usuario '$smtp_user' antes de pedir la contraseña.<br>";
+        echo "Revise espacios en blanco al inicio o final del correo.";
+    } else {
+        // Enviar Password
+        fputs($socket, base64_encode($smtp_pass) . "\r\n");
+        $auth_result = fgets($socket, 515);
+        echo "Paso 3 (Resultado Final): $auth_result <br>";
+
+        if (strpos($auth_result, '235') !== false) {
+            echo "<h4 style='color:green'>✅ ÉXITO TOTAL: Credenciales SMTP válidas.</h4>";
+        } else {
+            echo "<h4 style='color:red'>❌ FALLÓ AUTENTICACIÓN EN EL PASSWORD</h4>";
+            echo "El usuario fue aceptado, pero la contraseña rechazada.";
+        }
+    }
+    fclose($socket);
+
+
 }
 ?>
