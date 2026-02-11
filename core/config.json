@@ -1,0 +1,19 @@
+{
+    "mail": {
+        "smtp_user": "",
+        "smtp_pass": ""
+    },
+    "ldap": {
+        "bind_user": "",
+        "bind_pass": "",
+        "host": "ldaps://10.194.194.142",
+        "port": 636,
+        "base_dn": "DC=urosario,DC=loc"
+    },
+    "db": {
+        "host": "127.0.0.1",
+        "name": "trazabilidad_local",
+        "user": "appadmdb",
+        "pass": ""
+    }
+}
