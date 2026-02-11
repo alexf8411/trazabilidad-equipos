@@ -1,25 +1,27 @@
 <?php
 /**
  * public/configuracion.php
- * V3.1 - Gestión Centralizada (Incluye Textos Masivos)
+ * Versión 3.2 - Gestión Centralizada de Configuración y Textos Legales
  */
 require_once '../core/session.php';
 
-// 1. SEGURIDAD: Solo Administrador
+// 1. SEGURIDAD: Bloqueo estricto (Solo Administrador)
 if (!isset($_SESSION['logged_in']) || $_SESSION['rol'] !== 'Administrador') {
-    header("Location: dashboard.php"); exit;
+    header("Location: dashboard.php");
+    exit;
 }
 
 $msg = "";
 $configFile = '../core/config.json';
-// Definimos los 3 archivos de texto legal
+
+// Definición de archivos de texto legal
 $filesTxt = [
-    'txt_asign' => '../core/acta_legal.txt',
-    'txt_baja'  => '../core/acta_baja.txt',
-    'txt_masiva'=> '../core/acta_masiva.txt' // NUEVO
+    'txt_asign'  => '../core/acta_legal.txt',   // Para acta individual
+    'txt_baja'   => '../core/acta_baja.txt',    // Para acta de baja
+    'txt_masiva' => '../core/acta_masiva.txt'   // NUEVO: Para manifiesto masivo
 ];
 
-// Asegurar existencia de archivos base
+// 2. INICIALIZACIÓN DE ARCHIVOS (Si no existen)
 if (!file_exists($configFile)) {
     $initialConfig = [
         "mail" => ["smtp_user" => "", "smtp_pass" => ""],
@@ -29,81 +31,122 @@ if (!file_exists($configFile)) {
     file_put_contents($configFile, json_encode($initialConfig, JSON_PRETTY_PRINT));
 }
 
-// Crear archivos de texto si no existen
-if(!file_exists($filesTxt['txt_asign'])) file_put_contents($filesTxt['txt_asign'], "El usuario declara recibir el equipo...");
-if(!file_exists($filesTxt['txt_baja']))  file_put_contents($filesTxt['txt_baja'], "CERTIFICACIÓN DE BAJA DE ACTIVOS...");
-if(!file_exists($filesTxt['txt_masiva'])) file_put_contents($filesTxt['txt_masiva'], "MANIFIESTO DE ENTREGA: El responsable recibe los equipos listados...");
+// Crear textos por defecto si están vacíos
+if(!file_exists($filesTxt['txt_asign'])) file_put_contents($filesTxt['txt_asign'], "El usuario declara recibir el activo en custodia...");
+if(!file_exists($filesTxt['txt_baja']))  file_put_contents($filesTxt['txt_baja'], "CERTIFICACIÓN DE BAJA: El activo ha sido retirado del inventario...");
+if(!file_exists($filesTxt['txt_masiva'])) file_put_contents($filesTxt['txt_masiva'], "MANIFIESTO DE ENTREGA: El responsable recibe a entera satisfacción los equipos detallados en la tabla adjunta...");
 
-// 2. PROCESAR GUARDADO (POST)
+
+// 3. PROCESAMIENTO DEL FORMULARIO (Guardar Cambios)
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     try {
         $currentConfig = json_decode(file_get_contents($configFile), true);
 
-        // MAIL
+        // A. Configuración de Correo
         $currentConfig['mail']['smtp_user'] = $_POST['smtp_user'];
-        if (!empty($_POST['smtp_pass'])) $currentConfig['mail']['smtp_pass'] = $_POST['smtp_pass'];
+        if (!empty($_POST['smtp_pass'])) {
+            $currentConfig['mail']['smtp_pass'] = $_POST['smtp_pass'];
+        }
 
-        // LDAP
+        // B. Configuración LDAP
         $currentConfig['ldap']['bind_user'] = $_POST['ldap_user'];
-        if (!empty($_POST['ldap_pass'])) $currentConfig['ldap']['bind_pass'] = $_POST['ldap_pass'];
+        if (!empty($_POST['ldap_pass'])) {
+            $currentConfig['ldap']['bind_pass'] = $_POST['ldap_pass'];
+        }
 
-        // DB
+        // C. Configuración Base de Datos
         $currentConfig['db']['user'] = $_POST['db_user'];
-        if (!empty($_POST['db_pass'])) $currentConfig['db']['pass'] = $_POST['db_pass'];
+        if (!empty($_POST['db_pass'])) {
+            $currentConfig['db']['pass'] = $_POST['db_pass'];
+        }
 
+        // Guardar JSON
         if (file_put_contents($configFile, json_encode($currentConfig, JSON_PRETTY_PRINT))) {
             // Guardar Textos Legales
             file_put_contents($filesTxt['txt_asign'], $_POST['texto_asign']);
             file_put_contents($filesTxt['txt_baja'],  $_POST['texto_baja']);
-            file_put_contents($filesTxt['txt_masiva'], $_POST['texto_masiva']); // Guardar nuevo texto
+            file_put_contents($filesTxt['txt_masiva'], $_POST['texto_masiva']); // Guardado del nuevo campo
             
-            $msg = "<div class='alert success'>✅ Configuración guardada correctamente.</div>";
+            $msg = "<div class='alert success'>✅ Configuración y textos actualizados correctamente.</div>";
         } else {
-            throw new Exception("No se pudo escribir en core/config.json");
+            throw new Exception("No se pudo escribir en el archivo de configuración.");
         }
+
     } catch (Exception $e) {
-        $msg = "<div class='alert error'>❌ Error: " . $e->getMessage() . "</div>";
+        $msg = "<div class='alert error'>❌ Error al guardar: " . $e->getMessage() . "</div>";
     }
 }
 
-// 3. LEER VALORES
+// 4. LECTURA DE VALORES ACTUALES
 $data = json_decode(file_get_contents($configFile), true);
-$txt_asign = file_get_contents($filesTxt['txt_asign']);
-$txt_baja  = file_get_contents($filesTxt['txt_baja']);
-$txt_masiva= file_get_contents($filesTxt['txt_masiva']);
+$txt_asign  = file_exists($filesTxt['txt_asign']) ? file_get_contents($filesTxt['txt_asign']) : '';
+$txt_baja   = file_exists($filesTxt['txt_baja']) ? file_get_contents($filesTxt['txt_baja']) : '';
+$txt_masiva = file_exists($filesTxt['txt_masiva']) ? file_get_contents($filesTxt['txt_masiva']) : '';
 ?>
 
 <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Configuración | URTRACK</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"> <title>Configuración | URTRACK</title>
     <style>
-        :root { --ur-blue: #002D72; --ur-gold: #ffc107; }
-        body { font-family: 'Segoe UI', sans-serif; background: #f4f6f9; padding: 20px; }
+        :root { --ur-blue: #002D72; --ur-gold: #ffc107; --bg: #f4f6f9; }
+        body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); padding: 20px; margin: 0; }
         .container { max-width: 900px; margin: 0 auto; }
-        .card { background: white; padding: 25px; border-radius: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); margin-bottom: 20px; }
-        h2 { color: var(--ur-blue); border-bottom: 2px solid var(--ur-blue); padding-bottom: 10px; }
-        h3 { color: #555; margin-top: 25px; border-left: 5px solid var(--ur-gold); padding-left: 10px; }
-        .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 15px; }
+        
+        /* Card Styles */
+        .card { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); margin-bottom: 30px; }
+        h2 { color: var(--ur-blue); border-bottom: 2px solid #eee; padding-bottom: 15px; margin-top: 0; }
+        h3 { color: #444; margin-top: 30px; font-size: 1.1rem; display: flex; align-items: center; gap: 10px; }
+        h3::before { content: ''; display: block; width: 4px; height: 18px; background: var(--ur-gold); border-radius: 2px; }
+
+        /* Grid Responsive System */
+        .form-grid { 
+            display: grid; 
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); 
+            gap: 20px; 
+            margin-top: 15px;
+        }
         .full-width { grid-column: 1 / -1; }
-        label { display: block; font-weight: bold; font-size: 0.9rem; margin-bottom: 5px; color: #444; }
-        input, textarea { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box; }
-        textarea { min-height: 100px; resize: vertical; font-family: monospace; font-size: 0.9rem; }
-        .btn-save { background: var(--ur-blue); color: white; padding: 15px; width: 100%; border: none; border-radius: 5px; font-weight: bold; cursor: pointer; font-size: 1rem; margin-top: 20px; }
-        .btn-save:hover { background: #001f52; }
-        .alert { padding: 15px; border-radius: 5px; margin-bottom: 20px; text-align: center; font-weight: bold; }
-        .success { background: #d4edda; color: #155724; }
-        .error { background: #f8d7da; color: #721c24; }
-        .help-text { font-size: 0.8rem; color: #666; background: #eee; padding: 5px; border-radius: 3px; display: block; margin-top: 5px; }
-        .btn-back { text-decoration: none; color: #666; display: inline-block; margin-bottom: 15px; }
+
+        /* Inputs */
+        label { display: block; font-weight: 600; font-size: 0.9rem; margin-bottom: 8px; color: #333; }
+        input[type="text"], input[type="password"], textarea { 
+            width: 100%; padding: 12px; border: 1px solid #cbd5e1; border-radius: 6px; 
+            box-sizing: border-box; font-size: 0.95rem; transition: border 0.2s;
+        }
+        input:focus, textarea:focus { border-color: var(--ur-blue); outline: none; }
+        textarea { min-height: 120px; resize: vertical; line-height: 1.5; font-family: inherit; }
+
+        /* Buttons & Alerts */
+        .btn-save { 
+            background: var(--ur-blue); color: white; padding: 15px; width: 100%; border: none; 
+            border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 1rem; margin-top: 30px; 
+            transition: background 0.2s;
+        }
+        .btn-save:hover { background: #001a4d; }
+        .btn-back { text-decoration: none; color: #64748b; font-weight: 600; display: inline-flex; align-items: center; gap: 5px; margin-bottom: 20px; }
+        
+        .alert { padding: 15px; border-radius: 8px; margin-bottom: 20px; text-align: center; font-weight: bold; }
+        .success { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
+        .error { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; }
+        
+        .help-text { font-size: 0.8rem; color: #64748b; margin-top: 5px; display: block; }
+
+        /* Responsive adjustments */
+        @media (max-width: 600px) {
+            .card { padding: 20px; }
+            .form-grid { grid-template-columns: 1fr; }
+        }
     </style>
 </head>
 <body>
+
 <div class="container">
     <a href="dashboard.php" class="btn-back">⬅ Volver al Dashboard</a>
+    
     <?= $msg ?>
+    
     <form method="POST">
         <div class="card">
             <h2>⚙️ Configuración del Sistema</h2>
@@ -116,53 +159,58 @@ $txt_masiva= file_get_contents($filesTxt['txt_masiva']);
                 </div>
                 <div>
                     <label>Contraseña (App Password)</label>
-                    <input type="password" name="smtp_pass" placeholder="Dejar vacía para mantener">
+                    <input type="password" name="smtp_pass" placeholder="Dejar vacía para mantener actual">
+                    <span class="help-text">Se recomienda usar App Password de Office365/Gmail.</span>
                 </div>
             </div>
 
-            <h3>🔑 Directorio Activo (LDAP)</h3>
+            <h3>🔑 Conexión Directorio Activo (LDAP)</h3>
             <div class="form-grid">
                 <div>
-                    <label>Usuario Bind</label>
+                    <label>Usuario de Servicio (Bind User)</label>
                     <input type="text" name="ldap_user" value="<?= htmlspecialchars($data['ldap']['bind_user'] ?? '') ?>" placeholder="CN=...">
                 </div>
                 <div>
-                    <label>Contraseña LDAP</label>
-                    <input type="password" name="ldap_pass" placeholder="Dejar vacía para mantener">
+                    <label>Contraseña de Servicio</label>
+                    <input type="password" name="ldap_pass" placeholder="Dejar vacía para mantener actual">
                 </div>
             </div>
 
-            <h3>💾 Base de Datos</h3>
+            <h3>💾 Base de Datos Local</h3>
             <div class="form-grid">
                 <div>
-                    <label>Usuario BD</label>
+                    <label>Usuario MySQL</label>
                     <input type="text" name="db_user" value="<?= htmlspecialchars($data['db']['user'] ?? '') ?>">
                 </div>
                 <div>
-                    <label>Contraseña BD</label>
-                    <input type="password" name="db_pass" placeholder="Dejar vacía para mantener">
+                    <label>Contraseña MySQL</label>
+                    <input type="password" name="db_pass" placeholder="Dejar vacía para mantener actual">
                 </div>
             </div>
 
-            <h3>⚖️ Textos Legales (Reportes)</h3>
+            <h3>⚖️ Textos Legales para Reportes</h3>
             <div class="form-grid">
                 <div class="full-width">
-                    <label>📝 Cláusula Acta Individual (Asignación/Devolución)</label>
+                    <label>📝 Cláusula para Acta Individual (Movimientos)</label>
                     <textarea name="texto_asign"><?= htmlspecialchars($txt_asign) ?></textarea>
                 </div>
+                
                 <div class="full-width">
-                    <label>📦 Cláusula Manifiesto Masivo (Listado de Equipos)</label>
-                    <textarea name="texto_masiva" style="border-left: 3px solid #4f46e5;"><?= htmlspecialchars($txt_masiva) ?></textarea>
+                    <label style="color: #4f46e5;">📦 Cláusula para Manifiesto de Entrega Masiva</label>
+                    <textarea name="texto_masiva" style="border-left: 4px solid #4f46e5; background-color: #fcfdff;"><?= htmlspecialchars($txt_masiva) ?></textarea>
+                    <span class="help-text">Este texto aparecerá al final del PDF generado por el módulo de Asignación Masiva.</span>
                 </div>
+
                 <div class="full-width">
-                    <label>🗑️ Cláusula Acta de Baja</label>
-                    <textarea name="texto_baja" style="border-left: 3px solid #dc3545;"><?= htmlspecialchars($txt_baja) ?></textarea>
+                    <label style="color: #dc3545;">🗑️ Cláusula para Certificación de Baja</label>
+                    <textarea name="texto_baja" style="border-left: 4px solid #dc3545; background-color: #fff5f5;"><?= htmlspecialchars($txt_baja) ?></textarea>
                 </div>
             </div>
 
-            <button type="submit" class="btn-save" onclick="return confirm('¿Confirma guardar los cambios?');">GUARDAR CONFIGURACIÓN</button>
+            <button type="submit" class="btn-save" onclick="return confirm('¿Está seguro de guardar estos cambios?');">GUARDAR CONFIGURACIÓN</button>
         </div>
     </form>
 </div>
+
 </body>
 </html>
