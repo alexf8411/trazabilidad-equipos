@@ -112,6 +112,11 @@ $rol = $_SESSION['rol']; // Atajo para escribir menos código
                 <h3>🚚 Registro de Movimiento</h3>
                 <p>Asignaciones, devoluciones y traslados entre sedes.</p>
             </a>
+
+            <a href="asignacion_masiva.php" class="action-card card-move" style="border-top-color: #4f46e5;">
+                <h3>🚀 Asignación Masiva</h3>
+                <p>Carga CSV para múltiples equipos (Máx 100). Ideal para salas o laboratorios.</p>
+            </a>
         <?php endif; ?>
 
         <?php if (in_array($rol, ['Administrador', 'Recursos', 'Auditor'])): ?>
