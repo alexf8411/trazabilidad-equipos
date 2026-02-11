@@ -22,14 +22,27 @@ function procesarFila($data, $pdo, $bodega, &$exitos, &$errores_fila) {
     $marca     = trim($data[2]);
     $modelo    = trim($data[3]);
     $vida_util = (int) trim($data[4]);
-    $precio    = (float) str_replace(['$', '.', ','], ['', '', '.'], trim($data[5]));
+    $precio_raw = trim($data[5]);
     $raw_fecha = trim($data[6]);
     $modalidad = trim($data[7]);
     
-    // Validaciones
+    // Validaciones básicas
     if (empty($serial) || empty($placa)) return;
+    
+    // Limpiar precio: eliminar símbolos y convertir , a .
+    $precio_limpio = str_replace(['$', '.', ' '], '', $precio_raw);
+    $precio_limpio = str_replace(',', '.', $precio_limpio);
+    $precio = (float) $precio_limpio;
+    
     if ($vida_util <= 0 || $precio <= 0) {
-        $errores_fila[] = "Fila con serial $serial: datos numéricos inválidos";
+        $errores_fila[] = "Serial $serial: datos numéricos inválidos (Vida útil: $vida_util, Precio: $precio)";
+        return;
+    }
+    
+    // Validar modalidad
+    $modalidades_validas = ['Propio', 'Leasing', 'Proyecto'];
+    if (!in_array($modalidad, $modalidades_validas)) {
+        $errores_fila[] = "Serial $serial: modalidad '$modalidad' no válida. Debe ser: Propio, Leasing o Proyecto";
         return;
     }
     
@@ -40,8 +53,8 @@ function procesarFila($data, $pdo, $bodega, &$exitos, &$errores_fila) {
     $fecha_evento = date('Y-m-d H:i:s');
 
     try {
-        // Verificar duplicado
-        $stmt_check = $pdo->prepare("SELECT id FROM equipos WHERE serial = ? OR placa_ur = ?");
+        // Verificar duplicado - CORREGIDO: id_equipo en lugar de id
+        $stmt_check = $pdo->prepare("SELECT id_equipo FROM equipos WHERE serial = ? OR placa_ur = ?");
         $stmt_check->execute([$serial, $placa]);
         if ($stmt_check->fetch()) {
             $errores_fila[] = "Serial/Placa duplicado: $serial / $placa";
@@ -54,8 +67,18 @@ function procesarFila($data, $pdo, $bodega, &$exitos, &$errores_fila) {
         $stmt_eq = $pdo->prepare("INSERT INTO equipos (placa_ur, serial, marca, modelo, vida_util, precio, fecha_compra, modalidad, estado_maestro) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Alta')");
         $stmt_eq->execute([$placa, $serial, $marca, $modelo, $vida_util, $precio, $fecha_compra, $modalidad]);
         
-        $stmt_bit = $pdo->prepare("INSERT INTO bitacora (serial_equipo, id_lugar, sede, ubicacion, tipo_evento, correo_responsable, fecha_evento, tecnico_responsable, hostname) VALUES (?, ?, ?, ?, 'Alta', 'Bodega de TI', ?, ?, ?)");
-        $stmt_bit->execute([$serial, $bodega['id'], $bodega['sede'], $bodega['nombre'], $fecha_evento, $_SESSION['nombre'], $serial]);
+        // Insertar en bitacora - hostname usa el serial por defecto
+        $stmt_bit = $pdo->prepare("INSERT INTO bitacora (serial_equipo, id_lugar, sede, ubicacion, tipo_evento, correo_responsable, fecha_evento, tecnico_responsable, hostname) VALUES (?, ?, ?, ?, 'Alta', ?, ?, ?, ?)");
+        $stmt_bit->execute([
+            $serial, 
+            $bodega['id'], 
+            $bodega['sede'], 
+            $bodega['nombre'], 
+            'Bodega de TI', 
+            $fecha_evento, 
+            $_SESSION['nombre'], 
+            $serial  // hostname = serial
+        ]);
         
         $pdo->commit();
         $exitos++;
@@ -432,7 +455,7 @@ if (isset($_POST['importar'])) {
                             <td>HP</td>
                             <td>ProBook 440</td>
                             <td>5</td>
-                            <td>$4.500.000</td>
+                            <td>4500000</td>
                             <td>25/10/2023</td>
                             <td>Leasing</td>
                         </tr>
@@ -441,6 +464,9 @@ if (isset($_POST['importar'])) {
             </div>
             <p style="margin-top: 15px; font-size: 0.85rem; color: var(--ur-blue); font-weight: bold;">
                 <i class="fas fa-robot"></i> El sistema asignará automáticamente el Hostname basado en el Serial.
+            </p>
+            <p style="margin-top: 10px; font-size: 0.85rem; color: #666;">
+                <i class="fas fa-exclamation-circle"></i> <strong>Modalidad válida:</strong> Propio, Leasing o Proyecto
             </p>
         </div>
 
