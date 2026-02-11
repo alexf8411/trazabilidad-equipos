@@ -3,11 +3,11 @@ ob_start();
 
 /**
  * public/inventario.php
- * Versión V1.9: Inventario Responsivo y Dinámico
+ * Versión V2.0: Inventario Responsivo y Dinámico
  * Mejoras:
- * - Ordenamiento por columnas (Sortable headers).
- * - Paginación inteligente (Range view).
- * - Diseño móvil "Card View".
+ * - Ordenamiento por defecto por ID (Más reciente primero).
+ * - Visualización de ID de sistema.
+ * - Sortable headers, Paginación y Card View móvil.
  */
 
 require_once '../core/db.php';
@@ -25,6 +25,7 @@ if (!isset($_SESSION['logged_in']) || $_SESSION['logged_in'] !== true) {
 // 1. CONFIGURACIÓN DE ORDENAMIENTO (SORTING)
 // Definimos qué columnas se pueden ordenar para evitar SQL Injection
 $columnas_permitidas = [
+    'id'                 => 'e.id_equipo', // <--- NUEVO CAMPO AGREGADO
     'placa_ur'           => 'e.placa_ur',
     'serial'             => 'e.serial',
     'marca'              => 'e.marca',
@@ -35,7 +36,8 @@ $columnas_permitidas = [
 ];
 
 // Capturamos parámetros de URL o usamos valores por defecto
-$columna_orden = isset($_GET['col']) && array_key_exists($_GET['col'], $columnas_permitidas) ? $_GET['col'] : 'fecha_compra';
+// CAMBIO: El valor por defecto ahora es 'id' para mostrar lo más reciente primero
+$columna_orden = isset($_GET['col']) && array_key_exists($_GET['col'], $columnas_permitidas) ? $_GET['col'] : 'id';
 $orden_dir     = isset($_GET['dir']) && in_array(strtoupper($_GET['dir']), ['ASC', 'DESC']) ? strtoupper($_GET['dir']) : 'DESC';
 
 // Mapeamos al nombre real de la columna SQL
@@ -64,7 +66,9 @@ $filtro_sql = "";
 $params = [];
 
 if ($busqueda != '') {
+    // Se agrega búsqueda por ID también por si el usuario busca "1054"
     $filtro_sql = "AND (
+        e.id_equipo LIKE :p0 OR
         e.placa_ur LIKE :p1 OR 
         e.serial LIKE :p2 OR 
         e.modelo LIKE :p3 OR 
@@ -72,6 +76,7 @@ if ($busqueda != '') {
         b.correo_responsable LIKE :p5
     )";
     $term = "%$busqueda%";
+    $params[':p0'] = $term;
     $params[':p1'] = $term; $params[':p2'] = $term; $params[':p3'] = $term; 
     $params[':p4'] = $term; $params[':p5'] = $term;
 }
@@ -176,6 +181,9 @@ if (isset($_GET['status'])) {
         
         .btn-icon { text-decoration: none; font-size: 1.1rem; padding: 5px; display: inline-block; }
         .btn-revert { color: #fff; background: #6c757d; font-size: 0.75rem; padding: 3px 8px; border-radius: 4px; text-decoration: none; }
+        
+        /* Columna ID */
+        .col-id { color: #888; font-family: monospace; font-size: 0.95rem; }
 
         /* PAGINACIÓN */
         .pagination { display: flex; justify-content: center; flex-wrap: wrap; margin-top: 30px; gap: 5px; }
@@ -271,6 +279,7 @@ if (isset($_GET['status'])) {
         <table>
             <thead>
                 <tr>
+                    <th style="width: 60px;"><?= sortLink('id', 'ID', $columna_orden, $orden_dir, $busqueda) ?></th>
                     <th><?= sortLink('placa_ur', 'Placa UR', $columna_orden, $orden_dir, $busqueda) ?></th>
                     <th><?= sortLink('serial', 'Serial / Host', $columna_orden, $orden_dir, $busqueda) ?></th>
                     <th><?= sortLink('marca', 'Equipo', $columna_orden, $orden_dir, $busqueda) ?></th>
@@ -286,6 +295,10 @@ if (isset($_GET['status'])) {
                     <?php foreach ($equipos as $eq): ?>
                     <tr style="<?= $eq['estado_maestro'] == 'Baja' ? 'opacity: 0.7; background: #fff5f5;' : '' ?>">
                         
+                        <td data-label="ID" class="col-id">
+                            #<?= htmlspecialchars($eq['id_equipo']) ?>
+                        </td>
+
                         <td data-label="Placa UR" style="font-weight: bold; color: var(--primary);">
                             <?= htmlspecialchars($eq['placa_ur']) ?>
                         </td>
@@ -347,7 +360,7 @@ if (isset($_GET['status'])) {
                     </tr>
                     <?php endforeach; ?>
                 <?php else: ?>
-                    <tr><td colspan="8" class="empty-state" style="text-align:center; padding:20px;">No se encontraron resultados.</td></tr>
+                    <tr><td colspan="9" class="empty-state" style="text-align:center; padding:20px;">No se encontraron resultados.</td></tr>
                 <?php endif; ?>
             </tbody>
         </table>
