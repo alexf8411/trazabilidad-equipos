@@ -132,15 +132,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['upload_csv'])) {
                     // Saltar si la placa está vacía
                     if (empty($placa)) continue;
 
-                    // Validar formato de placa (opcional: puedes ajustar según tus necesidades)
-                    // if (!preg_match('/^[A-Z0-9]+$/', $placa)) {
-                    //     $status = 'invalid'; 
-                    //     $note = 'Formato de placa inválido'; 
-                    //     $csv_errors = true;
-                    //     $preview_data[] = ['placa'=>$placa, 'hostname'=>$hostname, 'serial'=>'', 'adic1'=>$adic1, 'adic2'=>$adic2, 'status'=>$status, 'note'=>$note];
-                    //     continue;
-                    // }
-
                     // Buscar equipo en la base de datos
                     $stmt = $pdo->prepare("SELECT serial, estado_maestro FROM equipos WHERE placa_ur = ? LIMIT 1");
                     $stmt->execute([$placa]);
@@ -210,17 +201,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirm_save'])) {
     try {
         $items = json_decode($_POST['items_json'], true);
         
-        if (!$items || count($items) == 0) {
-            throw new Exception("No se recibieron datos para procesar.");
-        }
-        
+        // VALIDACIÓN CORREGIDA - igual al código original
         $stmt_l = $pdo->prepare("SELECT sede, nombre FROM lugares WHERE id = ?");
         $stmt_l->execute([$_POST['id_lugar']]);
         $l = $stmt_l->fetch();
-        
-        if (!$l) {
-            throw new Exception("Ubicación no encontrada.");
-        }
         
         $pdo->beginTransaction();
         $serials_procesados = [];
@@ -705,7 +689,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirm_save'])) {
             </div>
             
             <div class="tips-box">
-                <h4><i class="fas fa-shield-alt"></i> Protecciones Automáticas</h4>
+                <h4>🛡️ Protecciones Automáticas</h4>
                 <ul>
                     <li>✅ <strong>Detección automática de delimitador</strong>: Soporta coma (,), punto y coma (;), tabulador</li>
                     <li>✅ <strong>Limpieza de espacios</strong>: Elimina espacios adicionales y saltos de línea internos</li>
@@ -872,7 +856,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirm_save'])) {
                 </div>
             </div>
 
-            <input type="hidden" name="items_json" value='<?= htmlspecialchars(json_encode($preview_data), ENT_QUOTES, 'UTF-8') ?>'>
+            <!-- CRÍTICO: Sin htmlspecialchars como en el original -->
+            <input type="hidden" name="items_json" value='<?= json_encode($preview_data) ?>'>
             
             <div style="display:flex; gap:20px; margin-top:30px; flex-wrap: wrap;">
                 <a href="asignacion_masiva.php" style="flex:1; min-width: 200px; text-align:center; padding:15px; background:#64748b; color:white; text-decoration:none; border-radius:8px; font-weight:bold;">CANCELAR</a>
