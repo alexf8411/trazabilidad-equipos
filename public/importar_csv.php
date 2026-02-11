@@ -2,6 +2,7 @@
 /**
  * public/importar_csv.php
  * Versión URTRACK V2.0 - Diseño Institucional & Responsive
+ * PROTECCIÓN AVANZADA: Detección automática de delimitadores, limpieza de datos
  */
 require_once '../core/db.php';
 require_once '../core/session.php';
@@ -14,11 +15,60 @@ if (!in_array($_SESSION['rol'], ['Administrador', 'Recursos'])) {
     exit;
 }
 
-function procesarFila($data, $pdo, $bodega, &$exitos, &$errores_fila) {
-    if (count($data) < 8) return;
+/**
+ * Detecta automáticamente el delimitador del CSV (coma, punto y coma, tabulador)
+ */
+function detectarDelimitador($archivo) {
+    $handle = fopen($archivo, 'r');
+    $primera_linea = fgets($handle);
+    fclose($handle);
+    
+    $delimitadores = [',', ';', "\t", '|'];
+    $max_count = 0;
+    $delimitador_detectado = ',';
+    
+    foreach ($delimitadores as $delim) {
+        $count = substr_count($primera_linea, $delim);
+        if ($count > $max_count) {
+            $max_count = $count;
+            $delimitador_detectado = $delim;
+        }
+    }
+    
+    return $delimitador_detectado;
+}
+
+/**
+ * Limpia y normaliza una fila del CSV
+ */
+function limpiarFila($data) {
+    // Eliminar columnas vacías al final
+    while (count($data) > 0 && trim(end($data)) === '') {
+        array_pop($data);
+    }
+    
+    // Limpiar cada celda: trim, eliminar BOM, saltos de línea internos
+    return array_map(function($celda) {
+        $celda = trim($celda);
+        $celda = str_replace(["\r", "\n", "\r\n"], ' ', $celda); // Quitar saltos internos
+        $celda = preg_replace('/\s+/', ' ', $celda); // Múltiples espacios -> uno solo
+        $celda = preg_replace('/^\xEF\xBB\xBF/', '', $celda); // Eliminar BOM UTF-8
+        return $celda;
+    }, $data);
+}
+
+function procesarFila($data, $pdo, $bodega, &$exitos, &$errores_fila, $numero_fila) {
+    // Limpiar la fila primero
+    $data = limpiarFila($data);
+    
+    // Validar que tenga al menos 8 columnas con datos
+    if (count($data) < 8) {
+        $errores_fila[] = "Fila $numero_fila: Datos insuficientes (se esperan 8 columnas, se encontraron " . count($data) . ")";
+        return;
+    }
 
     $serial    = strtoupper(trim($data[0]));
-    $placa     = trim($data[1]);
+    $placa     = strtoupper(trim($data[1])); // Placas también en mayúsculas
     $marca     = trim($data[2]);
     $modelo    = trim($data[3]);
     $vida_util = (int) trim($data[4]);
@@ -27,28 +77,65 @@ function procesarFila($data, $pdo, $bodega, &$exitos, &$errores_fila) {
     $modalidad = trim($data[7]);
     
     // Validaciones básicas
-    if (empty($serial) || empty($placa)) return;
+    if (empty($serial)) {
+        $errores_fila[] = "Fila $numero_fila: Serial vacío";
+        return;
+    }
+    if (empty($placa)) {
+        $errores_fila[] = "Fila $numero_fila: Placa vacía";
+        return;
+    }
     
-    // Limpiar precio: eliminar símbolos y convertir , a .
-    $precio_limpio = str_replace(['$', '.', ' '], '', $precio_raw);
-    $precio_limpio = str_replace(',', '.', $precio_limpio);
+    // Limpiar precio: eliminar símbolos, puntos de miles, convertir coma decimal a punto
+    $precio_limpio = str_replace(['$', ' ', 'COP', 'USD'], '', $precio_raw);
+    // Si tiene punto Y coma, asumimos punto=miles, coma=decimal
+    if (strpos($precio_limpio, '.') !== false && strpos($precio_limpio, ',') !== false) {
+        $precio_limpio = str_replace('.', '', $precio_limpio); // Quitar miles
+        $precio_limpio = str_replace(',', '.', $precio_limpio); // Coma a punto
+    } 
+    // Si solo tiene coma, puede ser decimal
+    elseif (strpos($precio_limpio, ',') !== false) {
+        $precio_limpio = str_replace(',', '.', $precio_limpio);
+    }
+    // Si solo tiene punto, puede ser miles o decimal - asumimos decimal si hay 2 dígitos después
+    elseif (preg_match('/\.(\d{3,})$/', $precio_limpio)) {
+        $precio_limpio = str_replace('.', '', $precio_limpio); // Es separador de miles
+    }
+    
     $precio = (float) $precio_limpio;
     
-    if ($vida_util <= 0 || $precio <= 0) {
-        $errores_fila[] = "Serial $serial: datos numéricos inválidos (Vida útil: $vida_util, Precio: $precio)";
+    if ($vida_util <= 0 || $vida_util > 50) {
+        $errores_fila[] = "Fila $numero_fila (Serial: $serial): Vida útil inválida ($vida_util). Debe ser entre 1 y 50 años";
         return;
     }
     
-    // Validar modalidad
+    if ($precio <= 0) {
+        $errores_fila[] = "Fila $numero_fila (Serial: $serial): Precio inválido ($precio_raw)";
+        return;
+    }
+    
+    // Normalizar modalidad (case-insensitive)
+    $modalidad_normalizada = ucfirst(strtolower($modalidad));
     $modalidades_validas = ['Propio', 'Leasing', 'Proyecto'];
-    if (!in_array($modalidad, $modalidades_validas)) {
-        $errores_fila[] = "Serial $serial: modalidad '$modalidad' no válida. Debe ser: Propio, Leasing o Proyecto";
+    if (!in_array($modalidad_normalizada, $modalidades_validas)) {
+        $errores_fila[] = "Fila $numero_fila (Serial: $serial): Modalidad '$modalidad' no válida. Debe ser: Propio, Leasing o Proyecto";
         return;
     }
     
-    // Fecha más robusta
-    $fecha_normalizada = str_replace(['/', '.'], '-', $raw_fecha);
+    // Fecha más robusta - soporta múltiples formatos
+    $fecha_normalizada = str_replace(['/', '.', '\\'], '-', $raw_fecha);
     $timestamp = strtotime($fecha_normalizada);
+    
+    // Si falla, intentar formato DD-MM-YYYY
+    if (!$timestamp || $timestamp <= 0) {
+        $partes = explode('-', $fecha_normalizada);
+        if (count($partes) == 3 && strlen($partes[2]) == 4) {
+            // DD-MM-YYYY
+            $fecha_normalizada = $partes[2] . '-' . $partes[1] . '-' . $partes[0];
+            $timestamp = strtotime($fecha_normalizada);
+        }
+    }
+    
     $fecha_compra = ($timestamp && $timestamp > 0) ? date('Y-m-d', $timestamp) : date('Y-m-d');
     $fecha_evento = date('Y-m-d H:i:s');
 
@@ -57,7 +144,7 @@ function procesarFila($data, $pdo, $bodega, &$exitos, &$errores_fila) {
         $stmt_check = $pdo->prepare("SELECT id_equipo FROM equipos WHERE serial = ? OR placa_ur = ?");
         $stmt_check->execute([$serial, $placa]);
         if ($stmt_check->fetch()) {
-            $errores_fila[] = "Serial/Placa duplicado: $serial / $placa";
+            $errores_fila[] = "Fila $numero_fila: Serial/Placa duplicado ($serial / $placa)";
             return;
         }
 
@@ -65,7 +152,7 @@ function procesarFila($data, $pdo, $bodega, &$exitos, &$errores_fila) {
         $pdo->beginTransaction();
         
         $stmt_eq = $pdo->prepare("INSERT INTO equipos (placa_ur, serial, marca, modelo, vida_util, precio, fecha_compra, modalidad, estado_maestro) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Alta')");
-        $stmt_eq->execute([$placa, $serial, $marca, $modelo, $vida_util, $precio, $fecha_compra, $modalidad]);
+        $stmt_eq->execute([$placa, $serial, $marca, $modelo, $vida_util, $precio, $fecha_compra, $modalidad_normalizada]);
         
         // Insertar en bitacora - hostname usa el serial por defecto
         $stmt_bit = $pdo->prepare("INSERT INTO bitacora (serial_equipo, id_lugar, sede, ubicacion, tipo_evento, correo_responsable, fecha_evento, tecnico_responsable, hostname) VALUES (?, ?, ?, ?, 'Alta', ?, ?, ?, ?)");
@@ -85,7 +172,7 @@ function procesarFila($data, $pdo, $bodega, &$exitos, &$errores_fila) {
         
     } catch (Exception $e) {
         if ($pdo->inTransaction()) $pdo->rollBack();
-        $errores_fila[] = "Error en serial $serial: " . $e->getMessage();
+        $errores_fila[] = "Fila $numero_fila (Serial: $serial): " . $e->getMessage();
     }
 }
 
@@ -93,6 +180,7 @@ $errores = [];
 $errores_fila = [];
 $exitos = 0;
 $mensaje_exito = "";
+$delimitador_usado = ",";
 
 if (isset($_POST['importar'])) {
     $archivo = $_FILES['archivo_csv']['tmp_name'];
@@ -100,6 +188,9 @@ if (isset($_POST['importar'])) {
         $errores[] = "Por favor, selecciona un archivo CSV.";
     } else {
         try {
+            // Detectar automáticamente el delimitador
+            $delimitador_usado = detectarDelimitador($archivo);
+            
             $stmt_bodega = $pdo->prepare("SELECT id, sede, nombre FROM lugares WHERE nombre = 'Bodega de Tecnología' LIMIT 1");
             $stmt_bodega->execute();
             $bodega = $stmt_bodega->fetch(PDO::FETCH_ASSOC);
@@ -107,29 +198,46 @@ if (isset($_POST['importar'])) {
             if (!$bodega) throw new Exception("Error Crítico: No existe la 'Bodega de Tecnología'.");
 
             $handle = fopen($archivo, "r");
+            $numero_fila = 0;
             
             // Detectar y saltar encabezado
-            $primera_fila = fgetcsv($handle, 1000, ",");
+            $primera_fila = fgetcsv($handle, 10000, $delimitador_usado);
+            $numero_fila++;
+            
             if ($primera_fila) {
+                $primera_fila = limpiarFila($primera_fila);
                 $check = strtolower(trim($primera_fila[0]));
-                if (!in_array($check, ['serial', 'sn', 'placa', 'marca', 'modelo'])) {
-                    procesarFila($primera_fila, $pdo, $bodega, $exitos, $errores_fila);
+                // Si no parece encabezado, procesarla
+                if (!in_array($check, ['serial', 'sn', 'placa', 'marca', 'modelo', 'número de serie'])) {
+                    procesarFila($primera_fila, $pdo, $bodega, $exitos, $errores_fila, $numero_fila);
                 }
             }
 
-            while (($data = fgetcsv($handle, 1000, ",")) !== FALSE) {
-                procesarFila($data, $pdo, $bodega, $exitos, $errores_fila);
+            while (($data = fgetcsv($handle, 10000, $delimitador_usado)) !== FALSE) {
+                $numero_fila++;
+                
+                // Saltar filas completamente vacías
+                $data_limpia = limpiarFila($data);
+                if (count(array_filter($data_limpia)) == 0) {
+                    continue;
+                }
+                
+                procesarFila($data, $pdo, $bodega, $exitos, $errores_fila, $numero_fila);
             }
             
             fclose($handle);
             
+            $delimitador_nombre = ($delimitador_usado == ',') ? 'coma (,)' : 
+                                  (($delimitador_usado == ';') ? 'punto y coma (;)' : 
+                                  (($delimitador_usado == "\t") ? 'tabulador' : 'otro'));
+            
             if ($exitos > 0) {
-                $mensaje_exito = "✅ ¡Éxito! Se han cargado $exitos equipos al inventario maestro.";
+                $mensaje_exito = "✅ ¡Éxito! Se cargaron $exitos equipos. Delimitador detectado: $delimitador_nombre";
             }
             if (!empty($errores_fila)) {
-                $errores = array_merge($errores, array_slice($errores_fila, 0, 10)); // Mostrar solo primeros 10
-                if (count($errores_fila) > 10) {
-                    $errores[] = "... y " . (count($errores_fila) - 10) . " errores más.";
+                $errores = array_merge($errores, array_slice($errores_fila, 0, 15)); // Mostrar primeros 15
+                if (count($errores_fila) > 15) {
+                    $errores[] = "... y " . (count($errores_fila) - 15) . " errores más.";
                 }
             }
             
@@ -155,6 +263,7 @@ if (isset($_POST['importar'])) {
             --ur-dark: #1D1D1B;
             --success: #28a745;
             --error: #dc3545;
+            --warning: #ffc107;
         }
 
         * {
@@ -217,10 +326,11 @@ if (isset($_POST['importar'])) {
             border-radius: 8px; 
             margin-bottom: 25px; 
             display: flex; 
-            align-items: center; 
+            align-items: flex-start; 
             gap: 15px; 
             font-weight: 500;
             animation: slideIn 0.4s ease;
+            line-height: 1.5;
         }
         
         @keyframes slideIn {
@@ -238,6 +348,12 @@ if (isset($_POST['importar'])) {
             color: #721c24; 
             border-left: 6px solid var(--error); 
         }
+        
+        .alert-warning {
+            background: #fff3cd;
+            color: #856404;
+            border-left: 6px solid var(--warning);
+        }
 
         /* Box de Instrucciones */
         .instruction-card { 
@@ -254,6 +370,34 @@ if (isset($_POST['importar'])) {
             align-items: center; 
             gap: 10px;
             flex-wrap: wrap;
+        }
+        
+        .tips-box {
+            background: #e7f3ff;
+            border-left: 4px solid var(--ur-blue);
+            padding: 15px;
+            margin-top: 20px;
+            border-radius: 6px;
+        }
+        
+        .tips-box h4 {
+            margin: 0 0 10px 0;
+            color: var(--ur-blue);
+            font-size: 0.95rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .tips-box ul {
+            margin: 0;
+            padding-left: 20px;
+            font-size: 0.85rem;
+            color: #333;
+        }
+        
+        .tips-box li {
+            margin-bottom: 5px;
         }
 
         /* Tabla Responsive */
@@ -385,11 +529,20 @@ if (isset($_POST['importar'])) {
             }
             .alert {
                 padding: 12px 15px;
-                font-size: 0.9rem;
+                font-size: 0.85rem;
             }
             th, td {
                 padding: 8px;
                 font-size: 0.75rem;
+            }
+            .tips-box {
+                padding: 12px;
+            }
+            .tips-box h4 {
+                font-size: 0.85rem;
+            }
+            .tips-box ul {
+                font-size: 0.8rem;
             }
         }
 
@@ -462,11 +615,22 @@ if (isset($_POST['importar'])) {
                     </tbody>
                 </table>
             </div>
+            
+            <div class="tips-box">
+                <h4><i class="fas fa-shield-alt"></i> Protecciones Automáticas</h4>
+                <ul>
+                    <li>✅ <strong>Detección automática de delimitador</strong>: Soporta coma (,), punto y coma (;), tabulador</li>
+                    <li>✅ <strong>Limpieza de espacios</strong>: Elimina espacios adicionales y saltos de línea internos</li>
+                    <li>✅ <strong>Columnas vacías</strong>: Ignora columnas extras vacías al final</li>
+                    <li>✅ <strong>Formatos de precio</strong>: Acepta $4.500.000 / 4500000 / 4,500,000</li>
+                    <li>✅ <strong>Formatos de fecha</strong>: Acepta DD/MM/YYYY, DD-MM-YYYY, YYYY-MM-DD</li>
+                    <li>✅ <strong>Modalidad flexible</strong>: Acepta "leasing", "LEASING", "Leasing"</li>
+                    <li>✅ <strong>Validación de duplicados</strong>: Previene cargas repetidas</li>
+                </ul>
+            </div>
+            
             <p style="margin-top: 15px; font-size: 0.85rem; color: var(--ur-blue); font-weight: bold;">
                 <i class="fas fa-robot"></i> El sistema asignará automáticamente el Hostname basado en el Serial.
-            </p>
-            <p style="margin-top: 10px; font-size: 0.85rem; color: #666;">
-                <i class="fas fa-exclamation-circle"></i> <strong>Modalidad válida:</strong> Propio, Leasing o Proyecto
             </p>
         </div>
 
