@@ -1,8 +1,8 @@
 <?php
 /**
  * public/alta_equipos.php
- * Módulo de Registro Maestro (Recursos) - Versión V1.3
- * Ajuste: Placa UR y Hostname heredan el valor del Serial automáticamente.
+ * Módulo de Registro Maestro (Recursos) - Versión V1.4
+ * Ajuste: Placa UR ahora es un campo manual obligatorio.
  */
 require_once '../core/db.php';
 require_once '../core/session.php';
@@ -20,9 +20,7 @@ $msg = "";
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     // Sanitización
     $serial = trim($_POST['serial']);
-    
-    // LÓGICA DE NEGOCIO: Placa y Hostname = Serial
-    $placa = $serial; 
+    $placa  = trim($_POST['placa']); // NUEVO: Captura manual
     
     $marca = trim($_POST['marca']);
     $modelo = trim($_POST['modelo']);
@@ -36,12 +34,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $pdo->beginTransaction();
 
         // A. INSERTAR EN EQUIPOS
-        // Placa UR recibe el mismo valor que el Serial
         $sql_equipo = "INSERT INTO equipos (
                             placa_ur, serial, marca, modelo, 
                             vida_util, precio, 
                             fecha_compra, modalidad, estado_maestro
-                       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Alta')";
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Alta')";
         
         $stmt = $pdo->prepare($sql_equipo);
         $stmt->execute([
@@ -60,7 +57,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         }
 
         // C. INSERTAR EN BITÁCORA
-        // Hostname recibe el mismo valor que el Serial
+        // Nota: El Hostname inicial sigue siendo el Serial por defecto hasta que se configure en 'Movilidad'
         $sql_bitacora = "INSERT INTO bitacora (
                             serial_equipo, id_lugar, sede, ubicacion, 
                             tipo_evento, correo_responsable, fecha_evento, 
@@ -80,14 +77,15 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         ]);
 
         $pdo->commit();
-        // Redireccionamos mostrando el Serial como referencia
-        header("Location: alta_equipos.php?status=success&s=$serial");
+        // Redireccionamos mostrando la Placa como referencia
+        header("Location: alta_equipos.php?status=success&p=$placa");
         exit;
 
     } catch (PDOException $e) {
         $pdo->rollBack();
         if ($e->getCode() == '23000') {
-            $msg = "<div class='toast error'>⚠️ Error: El Serial ya está registrado en el sistema.</div>";
+            // El error puede ser por Serial o por Placa duplicada
+            $msg = "<div class='toast error'>⚠️ Error: El <b>Serial</b> o la <b>Placa UR</b> ya están registrados en el sistema. Verifique los datos.</div>";
         } else {
             $msg = "<div class='toast error'>❌ Error SQL: " . $e->getMessage() . "</div>";
         }
@@ -98,8 +96,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 }
 
 if (isset($_GET['status']) && $_GET['status'] == 'success') {
-    $serial_creado = htmlspecialchars($_GET['s']);
-    $msg = "<div class='toast success'>✅ Equipo con Serial <b>$serial_creado</b> ingresado correctamente.</div>";
+    $placa_creada = htmlspecialchars($_GET['p']);
+    $msg = "<div class='toast success'>✅ Equipo con Placa <b>$placa_creada</b> ingresado correctamente a Bodega.</div>";
 }
 ?>
 
@@ -136,7 +134,7 @@ if (isset($_GET['status']) && $_GET['status'] == 'success') {
     <div class="bulk-banner">
         <div>
             <strong>¿Tienes muchos equipos?</strong>
-            <p style="margin: 5px 0 0 0; font-size: 0.85rem; color: #555;">Sube un archivo CSV y registra cientos de activos en segundos.</p>
+            <p style="margin: 5px 0 0 0; font-size: 0.85rem; color: #555;">Sube un archivo CSV con las Placas y Seriales.</p>
         </div>
         <a href="importar_csv.php" class="btn-bulk">📥 Importación Masiva</a>
     </div>
@@ -153,9 +151,14 @@ if (isset($_GET['status']) && $_GET['status'] == 'success') {
             <div class="form-grid">
                 <div class="form-group">
                     <label>Serial Fabricante *</label>
-                    <input type="text" name="serial" required placeholder="Serial S/N">
+                    <input type="text" name="serial" required placeholder="Ej: 5CD2340JL" autofocus>
                 </div>
                 
+                <div class="form-group">
+                    <label>Placa Inventario UR *</label>
+                    <input type="text" name="placa" required placeholder="Ej: 004589">
+                </div>
+
                 <div class="form-group">
                     <label>Marca *</label>
                     <select name="marca" required>
@@ -196,11 +199,11 @@ if (isset($_GET['status']) && $_GET['status'] == 'success') {
                 </div>
 
                 <div class="full-width info-box">
-                    ℹ️ <strong>Nota:</strong> La Placa UR y el Hostname se asignan automáticamente; el equipo ingresará a <strong>Bodega de Tecnología</strong>.
+                    ℹ️ <strong>Nota:</strong> El equipo ingresará a <strong>Bodega de Tecnología</strong>. El Hostname se asignará inicialmente igual al Serial.
                 </div>
                 
                 <div class="full-width">
-                    <button type="submit" class="btn-submit">💾 Guardar Equipo Único</button>
+                    <button type="submit" class="btn-submit">💾 Guardar Equipo</button>
                 </div>
             </div>
         </form>
