@@ -76,7 +76,7 @@ if (isset($_POST['importar'])) {
             $pdo->beginTransaction();
 
             $stmt_eq = $pdo->prepare("INSERT INTO equipos (placa_ur, serial, marca, modelo, vida_util, precio, fecha_compra, modalidad, estado_maestro) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Alta')");
-            $stmt_bit = $pdo->prepare("INSERT INTO bitacora (serial_equipo, id_lugar, sede, ubicacion, tipo_evento, correo_responsable, fecha_evento, tecnico_responsable, hostname) VALUES (?, ?, ?, ?, 'Ingreso', 'Bodega de TI', ?, ?, ?)");
+            $stmt_bit = $pdo->prepare("INSERT INTO bitacora (serial_equipo, id_lugar, sede, ubicacion, tipo_evento, correo_responsable, fecha_evento, tecnico_responsable, hostname) VALUES (?, ?, ?, ?, 'Alta', 'Bodega de TI', ?, ?, ?)");
 
             $primera_fila = fgetcsv($handle, 1000, ",");
             if ($primera_fila) {

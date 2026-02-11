@@ -63,7 +63,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                             serial_equipo, id_lugar, sede, ubicacion, 
                             tipo_evento, correo_responsable, fecha_evento, 
                             tecnico_responsable, hostname
-                          ) VALUES (?, ?, ?, ?, 'Ingreso', ?, ?, ?, ?)";
+                          ) VALUES (?, ?, ?, ?, 'Alta', ?, ?, ?, ?)";
         
         $stmt_b = $pdo->prepare($sql_bitacora);
         $stmt_b->execute([
@@ -238,4 +238,4 @@ if (isset($_GET['status']) && $_GET['status'] == 'success') {
 </div>
 
 </body>
-</html>
+</html> 
