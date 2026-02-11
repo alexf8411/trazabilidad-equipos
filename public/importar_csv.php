@@ -1,14 +1,11 @@
 <?php
 /**
  * public/importar_csv.php
- * Importación masiva - Versión V1.6 Responsive
- * Ajustes:
- * - Cambio de tipo_evento 'Ingreso' por 'Alta' según reestructuración de DB.
+ * Versión URTRACK V2.0 - Diseño Institucional & Responsive
  */
 require_once '../core/db.php';
 require_once '../core/session.php';
 
-// 1. CONFIGURACIÓN
 set_time_limit(600);
 ini_set('memory_limit', '2G');
 
@@ -17,13 +14,9 @@ if (!in_array($_SESSION['rol'], ['Administrador', 'Recursos'])) {
     exit;
 }
 
-/**
- * Función para procesar cada fila del CSV
- */
 function procesarFila($data, $stmt_eq, $stmt_bit, $bodega, &$exitos) {
     if (count($data) < 8) return;
 
-    // 0: Serial | 1: Placa | 2: Marca | 3: Modelo | 4: Vida Útil | 5: Precio | 6: Fecha | 7: Modalidad
     $serial    = strtoupper(trim($data[0]));
     $placa     = trim($data[1]);
     $marca     = trim($data[2]);
@@ -40,16 +33,8 @@ function procesarFila($data, $stmt_eq, $stmt_bit, $bodega, &$exitos) {
     $timestamp = strtotime($fecha_normalizada);
     $fecha_compra = ($timestamp) ? date('Y-m-d', $timestamp) : date('Y-m-d');
 
-    $stmt_eq->execute([
-        $placa, $serial, $marca, $modelo,
-        $vida_util, $precio,
-        $fecha_compra, $modalidad
-    ]);
-    
-    $stmt_bit->execute([
-        $serial, $bodega['id'], $bodega['sede'], $bodega['nombre'],
-        $fecha_evento, $_SESSION['nombre'], $serial
-    ]);
+    $stmt_eq->execute([$placa, $serial, $marca, $modelo, $vida_util, $precio, $fecha_compra, $modalidad]);
+    $stmt_bit->execute([$serial, $bodega['id'], $bodega['sede'], $bodega['nombre'], $fecha_evento, $_SESSION['nombre'], $serial]);
     
     $exitos++;
 }
@@ -60,7 +45,6 @@ $mensaje_exito = "";
 
 if (isset($_POST['importar'])) {
     $archivo = $_FILES['archivo_csv']['tmp_name'];
-
     if (empty($archivo)) {
         $errores[] = "Por favor, selecciona un archivo CSV.";
     } else {
@@ -75,8 +59,6 @@ if (isset($_POST['importar'])) {
             $pdo->beginTransaction();
 
             $stmt_eq = $pdo->prepare("INSERT INTO equipos (placa_ur, serial, marca, modelo, vida_util, precio, fecha_compra, modalidad, estado_maestro) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Alta')");
-            
-            // CAMBIO REALIZADO: 'Ingreso' por 'Alta' para coincidir con el nuevo ENUM de la tabla bitacora
             $stmt_bit = $pdo->prepare("INSERT INTO bitacora (serial_equipo, id_lugar, sede, ubicacion, tipo_evento, correo_responsable, fecha_evento, tecnico_responsable, hostname) VALUES (?, ?, ?, ?, 'Alta', 'Bodega de TI', ?, ?, ?)");
 
             $primera_fila = fgetcsv($handle, 1000, ",");
@@ -93,21 +75,11 @@ if (isset($_POST['importar'])) {
             }
             
             $pdo->commit();
-            $mensaje_exito = "✅ ¡Éxito! Se han importado $exitos equipos.";
+            $mensaje_exito = "✅ ¡Éxito! Se han cargado $exitos equipos al inventario maestro.";
             fclose($handle);
-
-        } catch (PDOException $e) {
-            if ($pdo->inTransaction()) $pdo->rollBack();
-            if ($e->getCode() == '23000') {
-                preg_match("/Duplicate entry '(.*)' for key/", $e->getMessage(), $matches);
-                $valor = $matches[1] ?? "desconocido";
-                $errores[] = "⚠️ <b>Error de Duplicado:</b> El valor <b>'$valor'</b> ya existe.";
-            } else {
-                $errores[] = "❌ Error SQL: " . $e->getMessage();
-            }
         } catch (Exception $e) {
             if ($pdo->inTransaction()) $pdo->rollBack();
-            $errores[] = "❌ Error: " . $e->getMessage();
+            $errores[] = "Error: " . $e->getMessage();
         }
     }
 }
@@ -118,90 +90,175 @@ if (isset($_POST['importar'])) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Importar Equipos - URTRACK</title>
+    <title>Importar Equipos | URTRACK</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
-        :root { --primary: #002D72; --bg: #f4f6f9; --warning: #ffc107; }
-        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); padding: 40px; color: #333; margin: 0; }
-        .import-card { max-width: 900px; margin: 0 auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); width: 100%; box-sizing: border-box; }
-        .instruction-box { background: #fff8e1; border: 2px solid var(--warning); padding: 20px; border-radius: 8px; margin-bottom: 25px; }
-        .table-responsive { width: 100%; overflow-x: auto; }
-        .csv-table { width: 100%; border-collapse: collapse; margin: 15px 0; font-size: 0.85rem; min-width: 600px; }
-        .csv-table th { background: #eee; border: 1px solid #ccc; padding: 8px; text-align: left; }
-        .csv-table td { border: 1px solid #ccc; padding: 8px; }
-        .date-alert { background: #d1ecf1; color: #0c5460; padding: 10px; border-radius: 5px; border-left: 5px solid #17a2b8; margin-top: 10px; font-weight: bold; }
-        .alert { padding: 15px; border-radius: 5px; margin-bottom: 20px; }
-        .alert-error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
-        .alert-success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
-        input[type="file"] { margin: 20px 0; display: block; width: 100%; padding: 15px; background: #f8f9fa; border: 2px dashed var(--primary); border-radius: 8px; cursor: pointer; box-sizing: border-box; }
-        .btn-import { background: var(--primary); color: white; border: none; padding: 16px 25px; border-radius: 6px; cursor: pointer; width: 100%; font-size: 1.1rem; font-weight: bold; }
-        .btn-import:hover { background: #001f52; }
-        .btn-secondary { display: block; text-align: center; text-decoration: none; color: var(--primary); padding: 10px; margin-top: 20px; font-weight: 500; }
+        :root { 
+            --ur-blue: #002D72; 
+            --ur-gold: #FFC72C; 
+            --ur-light: #F8F9FA;
+            --ur-dark: #1D1D1B;
+            --success: #28a745;
+            --error: #dc3545;
+        }
+
+        body { 
+            font-family: 'Montserrat', 'Segoe UI', sans-serif; 
+            background-color: #e9ecef; 
+            margin: 0; padding: 20px;
+            display: flex; justify-content: center; align-items: flex-start;
+            min-height: 100vh;
+        }
+
+        .container { 
+            width: 100%; max-width: 1000px; 
+            background: white; border-radius: 16px; 
+            box-shadow: 0 15px 35px rgba(0,0,0,0.15); 
+            overflow: hidden; 
+            animation: fadeIn 0.5s ease;
+        }
+
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* Header Institucional */
+        .header { 
+            background: var(--ur-blue); color: white; 
+            padding: 30px; text-align: center; 
+            border-bottom: 5px solid var(--ur-gold);
+        }
+        .header h1 { margin: 0; font-size: 1.8rem; letter-spacing: 1px; text-transform: uppercase; }
+        .header p { margin: 10px 0 0; opacity: 0.8; font-size: 0.9rem; }
+
+        .content { padding: 40px; }
+
+        /* Alertas */
+        .alert { padding: 15px 20px; border-radius: 8px; margin-bottom: 25px; display: flex; align-items: center; gap: 15px; font-weight: 500; }
+        .alert-success { background: #d4edda; color: #155724; border-left: 6px solid var(--success); }
+        .alert-error { background: #f8d7da; color: #721c24; border-left: 6px solid var(--error); }
+
+        /* Box de Instrucciones */
+        .instruction-card { 
+            background: var(--ur-light); border: 1px solid #dee2e6; 
+            border-radius: 12px; padding: 25px; margin-bottom: 30px;
+        }
+        .instruction-card h3 { color: var(--ur-blue); margin-top: 0; display: flex; align-items: center; gap: 10px; }
+
+        /* Tabla Responsive */
+        .table-wrapper { overflow-x: auto; margin-top: 15px; border-radius: 8px; border: 1px solid #ddd; }
+        table { width: 100%; border-collapse: collapse; background: white; min-width: 700px; }
+        th { background: #f1f3f5; padding: 12px; text-align: left; font-size: 0.8rem; color: #666; text-transform: uppercase; }
+        td { padding: 12px; border-top: 1px solid #eee; font-size: 0.9rem; }
+
+        /* Dropzone / Input */
+        .file-upload-wrapper {
+            position: relative; margin-bottom: 30px;
+        }
+        input[type="file"] {
+            width: 100%; padding: 40px 20px;
+            border: 3px dashed #cbd5e0; border-radius: 12px;
+            background: #fafafa; text-align: center; cursor: pointer;
+            transition: all 0.3s; box-sizing: border-box;
+        }
+        input[type="file"]:hover { border-color: var(--ur-blue); background: #f0f4f8; }
+
+        /* Botones */
+        .btn-group { display: flex; flex-direction: column; gap: 15px; }
+        .btn-main { 
+            background: var(--ur-blue); color: white; border: none; 
+            padding: 18px; border-radius: 10px; font-size: 1.1rem; 
+            font-weight: bold; cursor: pointer; transition: 0.3s;
+            display: flex; justify-content: center; align-items: center; gap: 10px;
+        }
+        .btn-main:hover { background: #001f52; transform: translateY(-2px); box-shadow: 0 5px 15px rgba(0,45,114,0.3); }
+        
+        .btn-back { 
+            text-align: center; text-decoration: none; color: #666; 
+            font-size: 0.9rem; padding: 10px; transition: 0.3s;
+        }
+        .btn-back:hover { color: var(--ur-blue); }
+
+        /* Responsividad */
         @media (max-width: 768px) {
-            body { padding: 15px; }
-            .import-card { padding: 20px; }
-            h2 { font-size: 1.5rem; }
-            .instruction-box { padding: 15px; }
+            body { padding: 10px; }
+            .content { padding: 20px; }
+            .header h1 { font-size: 1.4rem; }
+            .instruction-card { padding: 15px; }
         }
     </style>
 </head>
 <body>
 
-<div class="import-card">
-    <h2 style="color:var(--primary); margin-top:0; text-align:center;">📥 Carga Masiva</h2>
-    
-    <?php if ($mensaje_exito): ?>
-        <div class="alert alert-success"><?= $mensaje_exito ?></div>
-    <?php endif; ?>
-
-    <?php foreach ($errores as $error): ?>
-        <div class="alert alert-error"><?= $error ?></div>
-    <?php endforeach; ?>
-
-    <div class="instruction-box">
-        <h3 style="margin-top:0; color: #856404;">⚠️ ESTRUCTURA OBLIGATORIA DEL CSV</h3>
-        <p>El archivo debe tener exactamente estas <strong>8 columnas</strong> en orden:</p>
-        
-        <div class="table-responsive">
-            <table class="csv-table">
-                <thead>
-                    <tr>
-                        <th>1. Serial</th>
-                        <th>2. Placa UR</th>
-                        <th>3. Marca</th>
-                        <th>4. Modelo</th>
-                        <th>5. Vida Útil</th>
-                        <th>6. Precio</th>
-                        <th>7. Fecha</th>
-                        <th>8. Modalidad</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr>
-                        <td>SN882233</td>
-                        <td>004589</td>
-                        <td>HP</td>
-                        <td>ProBook 440</td>
-                        <td>5</td>
-                        <td>4500000</td>
-                        <td>25/10/2023</td>
-                        <td>Leasing</td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
-
-        <div class="date-alert">
-            ℹ️ <strong>Nota:</strong> El Hostname se generará automáticamente igual al Serial.
-        </div>
+<div class="container">
+    <div class="header">
+        <h1><i class="fas fa-file-import"></i> URTRACK</h1>
+        <p>Módulo de Carga Masiva - Dirección de Tecnología</p>
     </div>
 
-    <form method="POST" enctype="multipart/form-data">
-        <label style="font-weight:bold; color:#444;">Seleccione el archivo CSV:</label>
-        <input type="file" name="archivo_csv" accept=".csv" required>
-        <button type="submit" name="importar" class="btn-import">🚀 SUBIR TODO A BODEGA</button>
-    </form>
+    <div class="content">
+        <?php if ($mensaje_exito): ?>
+            <div class="alert alert-success">
+                <i class="fas fa-check-circle fa-lg"></i> <?= $mensaje_exito ?>
+            </div>
+        <?php endif; ?>
 
-    <a href="alta_equipos.php" class="btn-secondary">⬅ Volver al Registro Individual</a>
+        <?php foreach ($errores as $error): ?>
+            <div class="alert alert-error">
+                <i class="fas fa-exclamation-triangle fa-lg"></i> <?= $error ?>
+            </div>
+        <?php endforeach; ?>
+
+        <div class="instruction-card">
+            <h3><i class="fas fa-info-circle"></i> Estructura del Archivo</h3>
+            <p style="font-size: 0.9rem; color: #555;">Para garantizar la integridad, el CSV debe contener 8 columnas estrictas:</p>
+            
+            <div class="table-wrapper">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Serial</th>
+                            <th>Placa UR</th>
+                            <th>Marca</th>
+                            <th>Modelo</th>
+                            <th>Vida Útil</th>
+                            <th>Precio</th>
+                            <th>Fecha Compra</th>
+                            <th>Modalidad</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>SN882233</strong></td>
+                            <td>004589</td>
+                            <td>HP</td>
+                            <td>ProBook 440</td>
+                            <td>5</td>
+                            <td>$4.500.000</td>
+                            <td>25/10/2023</td>
+                            <td>Leasing</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <p style="margin-top: 15px; font-size: 0.85rem; color: var(--ur-blue); font-weight: bold;">
+                <i class="fas fa-robot"></i> El sistema asignará automáticamente el Hostname basado en el Serial.
+            </p>
+        </div>
+
+        <form method="POST" enctype="multipart/form-data">
+            <div class="file-upload-wrapper">
+                <input type="file" name="archivo_csv" accept=".csv" required title="Seleccione su archivo .csv">
+            </div>
+
+            <div class="btn-group">
+                <button type="submit" name="importar" class="btn-main">
+                    <i class="fas fa-cloud-upload-alt"></i> PROCESAR CARGA A BODEGA
+                </button>
+                <a href="alta_equipos.php" class="btn-back">
+                    <i class="fas fa-arrow-left"></i> Volver al registro manual
+                </a>
+            </div>
+        </form>
+    </div>
 </div>
 
 </body>
