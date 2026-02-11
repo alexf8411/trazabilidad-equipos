@@ -1,27 +1,26 @@
 <?php
 /**
  * public/configuracion.php
- * V3.0 - Gestión Centralizada y Segura
- * Administra Credenciales (SMTP, LDAP, DB) y Textos Legales.
+ * V3.1 - Gestión Centralizada (Incluye Textos Masivos)
  */
 require_once '../core/session.php';
 
 // 1. SEGURIDAD: Solo Administrador
 if (!isset($_SESSION['logged_in']) || $_SESSION['rol'] !== 'Administrador') {
-    header("Location: dashboard.php");
-    exit;
+    header("Location: dashboard.php"); exit;
 }
 
 $msg = "";
 $configFile = '../core/config.json';
+// Definimos los 3 archivos de texto legal
 $filesTxt = [
     'txt_asign' => '../core/acta_legal.txt',
-    'txt_baja'  => '../core/acta_baja.txt'
+    'txt_baja'  => '../core/acta_baja.txt',
+    'txt_masiva'=> '../core/acta_masiva.txt' // NUEVO
 ];
 
 // Asegurar existencia de archivos base
 if (!file_exists($configFile)) {
-    // Si no existe, creamos una estructura vacía para evitar errores
     $initialConfig = [
         "mail" => ["smtp_user" => "", "smtp_pass" => ""],
         "ldap" => ["bind_user" => "", "bind_pass" => "", "host" => "ldaps://10.194.194.142", "port" => 636, "base_dn" => "DC=urosario,DC=loc"],
@@ -30,53 +29,48 @@ if (!file_exists($configFile)) {
     file_put_contents($configFile, json_encode($initialConfig, JSON_PRETTY_PRINT));
 }
 
-if(!file_exists($filesTxt['txt_asign'])) file_put_contents($filesTxt['txt_asign'], "Texto legal de asignación...");
-if(!file_exists($filesTxt['txt_baja']))  file_put_contents($filesTxt['txt_baja'], "CERTIFICACIÓN DE BAJA...");
+// Crear archivos de texto si no existen
+if(!file_exists($filesTxt['txt_asign'])) file_put_contents($filesTxt['txt_asign'], "El usuario declara recibir el equipo...");
+if(!file_exists($filesTxt['txt_baja']))  file_put_contents($filesTxt['txt_baja'], "CERTIFICACIÓN DE BAJA DE ACTIVOS...");
+if(!file_exists($filesTxt['txt_masiva'])) file_put_contents($filesTxt['txt_masiva'], "MANIFIESTO DE ENTREGA: El responsable recibe los equipos listados...");
 
 // 2. PROCESAR GUARDADO (POST)
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     try {
-        // Leemos configuración actual
         $currentConfig = json_decode(file_get_contents($configFile), true);
 
-        // A. MAIL
+        // MAIL
         $currentConfig['mail']['smtp_user'] = $_POST['smtp_user'];
-        if (!empty($_POST['smtp_pass'])) { // Solo actualizar si escribieron algo
-            $currentConfig['mail']['smtp_pass'] = $_POST['smtp_pass'];
-        }
+        if (!empty($_POST['smtp_pass'])) $currentConfig['mail']['smtp_pass'] = $_POST['smtp_pass'];
 
-        // B. LDAP
+        // LDAP
         $currentConfig['ldap']['bind_user'] = $_POST['ldap_user'];
-        if (!empty($_POST['ldap_pass'])) {
-            $currentConfig['ldap']['bind_pass'] = $_POST['ldap_pass'];
-        }
+        if (!empty($_POST['ldap_pass'])) $currentConfig['ldap']['bind_pass'] = $_POST['ldap_pass'];
 
-        // C. BASE DE DATOS
+        // DB
         $currentConfig['db']['user'] = $_POST['db_user'];
-        if (!empty($_POST['db_pass'])) {
-            $currentConfig['db']['pass'] = $_POST['db_pass'];
-        }
+        if (!empty($_POST['db_pass'])) $currentConfig['db']['pass'] = $_POST['db_pass'];
 
-        // Guardar JSON
         if (file_put_contents($configFile, json_encode($currentConfig, JSON_PRETTY_PRINT))) {
-            // Guardar Textos
+            // Guardar Textos Legales
             file_put_contents($filesTxt['txt_asign'], $_POST['texto_asign']);
             file_put_contents($filesTxt['txt_baja'],  $_POST['texto_baja']);
+            file_put_contents($filesTxt['txt_masiva'], $_POST['texto_masiva']); // Guardar nuevo texto
             
             $msg = "<div class='alert success'>✅ Configuración guardada correctamente.</div>";
         } else {
             throw new Exception("No se pudo escribir en core/config.json");
         }
-
     } catch (Exception $e) {
         $msg = "<div class='alert error'>❌ Error: " . $e->getMessage() . "</div>";
     }
 }
 
-// 3. LEER VALORES PARA MOSTRAR EN EL FORMULARIO
+// 3. LEER VALORES
 $data = json_decode(file_get_contents($configFile), true);
 $txt_asign = file_get_contents($filesTxt['txt_asign']);
 $txt_baja  = file_get_contents($filesTxt['txt_baja']);
+$txt_masiva= file_get_contents($filesTxt['txt_masiva']);
 ?>
 
 <!DOCTYPE html>
@@ -96,7 +90,7 @@ $txt_baja  = file_get_contents($filesTxt['txt_baja']);
         .full-width { grid-column: 1 / -1; }
         label { display: block; font-weight: bold; font-size: 0.9rem; margin-bottom: 5px; color: #444; }
         input, textarea { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box; }
-        textarea { min-height: 100px; resize: vertical; }
+        textarea { min-height: 100px; resize: vertical; font-family: monospace; font-size: 0.9rem; }
         .btn-save { background: var(--ur-blue); color: white; padding: 15px; width: 100%; border: none; border-radius: 5px; font-weight: bold; cursor: pointer; font-size: 1rem; margin-top: 20px; }
         .btn-save:hover { background: #001f52; }
         .alert { padding: 15px; border-radius: 5px; margin-bottom: 20px; text-align: center; font-weight: bold; }
@@ -122,25 +116,23 @@ $txt_baja  = file_get_contents($filesTxt['txt_baja']);
                 </div>
                 <div>
                     <label>Contraseña (App Password)</label>
-                    <input type="password" name="smtp_pass" placeholder="Dejar vacía para mantener la actual">
-                    <span class="help-text">ℹ️ Use una contraseña de aplicación de Office 365.</span>
+                    <input type="password" name="smtp_pass" placeholder="Dejar vacía para mantener">
                 </div>
             </div>
 
             <h3>🔑 Directorio Activo (LDAP)</h3>
             <div class="form-grid">
                 <div>
-                    <label>Usuario de Servicio (Bind User)</label>
-                    <input type="text" name="ldap_user" value="<?= htmlspecialchars($data['ldap']['bind_user'] ?? '') ?>" placeholder="CN=recursos,DC=urosario...">
+                    <label>Usuario Bind</label>
+                    <input type="text" name="ldap_user" value="<?= htmlspecialchars($data['ldap']['bind_user'] ?? '') ?>" placeholder="CN=...">
                 </div>
                 <div>
                     <label>Contraseña LDAP</label>
-                    <input type="password" name="ldap_pass" placeholder="Dejar vacía para mantener la actual">
-                    <span class="help-text">ℹ️ Cuenta para buscar nombres y departamentos.</span>
+                    <input type="password" name="ldap_pass" placeholder="Dejar vacía para mantener">
                 </div>
             </div>
 
-            <h3>💾 Base de Datos (MySQL)</h3>
+            <h3>💾 Base de Datos</h3>
             <div class="form-grid">
                 <div>
                     <label>Usuario BD</label>
@@ -148,16 +140,19 @@ $txt_baja  = file_get_contents($filesTxt['txt_baja']);
                 </div>
                 <div>
                     <label>Contraseña BD</label>
-                    <input type="password" name="db_pass" placeholder="Dejar vacía para mantener la actual">
-                    <span class="help-text">ℹ️ Credenciales locales de MySQL.</span>
+                    <input type="password" name="db_pass" placeholder="Dejar vacía para mantener">
                 </div>
             </div>
 
-            <h3>⚖️ Textos para Reportes</h3>
+            <h3>⚖️ Textos Legales (Reportes)</h3>
             <div class="form-grid">
                 <div class="full-width">
-                    <label>📝 Cláusula Acta Asignación/Devolución</label>
+                    <label>📝 Cláusula Acta Individual (Asignación/Devolución)</label>
                     <textarea name="texto_asign"><?= htmlspecialchars($txt_asign) ?></textarea>
+                </div>
+                <div class="full-width">
+                    <label>📦 Cláusula Manifiesto Masivo (Listado de Equipos)</label>
+                    <textarea name="texto_masiva" style="border-left: 3px solid #4f46e5;"><?= htmlspecialchars($txt_masiva) ?></textarea>
                 </div>
                 <div class="full-width">
                     <label>🗑️ Cláusula Acta de Baja</label>
@@ -165,7 +160,7 @@ $txt_baja  = file_get_contents($filesTxt['txt_baja']);
                 </div>
             </div>
 
-            <button type="submit" class="btn-save" onclick="return confirm('¿Confirma guardar los cambios? Credenciales incorrectas bloquearán el sistema.');">GUARDAR CONFIGURACIÓN</button>
+            <button type="submit" class="btn-save" onclick="return confirm('¿Confirma guardar los cambios?');">GUARDAR CONFIGURACIÓN</button>
         </div>
     </form>
 </div>
