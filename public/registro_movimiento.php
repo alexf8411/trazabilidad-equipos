@@ -120,7 +120,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirmar'])) {
         .switch-container { display: flex; align-items: center; gap: 10px; }
         .switch { position: relative; display: inline-block; width: 50px; height: 26px; }
         .switch input { opacity: 0; width: 0; height: 0; }
-        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; border-radius: 34px; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #dc3545; transition: .4s; border-radius: 34px; }
         .slider:before { position: absolute; content: ""; height: 20px; width: 20px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
         input:checked + .slider { background-color: var(--success); }
         input:focus + .slider { box-shadow: 0 0 1px var(--success); }
@@ -173,7 +173,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirmar'])) {
                     
                     <div class="switch-container">
                         <label class="switch">
-                            <input type="checkbox" name="check_dlo" value="1" checked>
+                            <input type="checkbox" name="check_dlo" value="1">
                             <span class="slider"></span>
                         </label>
                         <span class="switch-label">Agente DLO/Backup</span>
@@ -181,7 +181,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirmar'])) {
 
                     <div class="switch-container">
                         <label class="switch">
-                            <input type="checkbox" name="check_antivirus" value="1" checked>
+                            <input type="checkbox" name="check_antivirus" value="1">
                             <span class="slider"></span>
                         </label>
                         <span class="switch-label">Antivirus Corp.</span>
