@@ -1,7 +1,7 @@
 <?php
 /**
  * public/configuracion.php
- * Versión 3.2 - Gestión Centralizada de Configuración y Textos Legales
+ * Versión Final 3.3 - Gestión Centralizada, Responsive y Segura
  */
 require_once '../core/session.php';
 
@@ -28,60 +28,74 @@ if (!file_exists($configFile)) {
         "ldap" => ["bind_user" => "", "bind_pass" => "", "host" => "ldaps://10.194.194.142", "port" => 636, "base_dn" => "DC=urosario,DC=loc"],
         "db"   => ["host" => "127.0.0.1", "name" => "trazabilidad_local", "user" => "appadmdb", "pass" => ""]
     ];
-    file_put_contents($configFile, json_encode($initialConfig, JSON_PRETTY_PRINT));
+    // Intentar crear el archivo config
+    @file_put_contents($configFile, json_encode($initialConfig, JSON_PRETTY_PRINT));
 }
 
-// Crear textos por defecto si están vacíos
-if(!file_exists($filesTxt['txt_asign'])) file_put_contents($filesTxt['txt_asign'], "El usuario declara recibir el activo en custodia...");
-if(!file_exists($filesTxt['txt_baja']))  file_put_contents($filesTxt['txt_baja'], "CERTIFICACIÓN DE BAJA: El activo ha sido retirado del inventario...");
-if(!file_exists($filesTxt['txt_masiva'])) file_put_contents($filesTxt['txt_masiva'], "MANIFIESTO DE ENTREGA: El responsable recibe a entera satisfacción los equipos detallados en la tabla adjunta...");
+// Crear textos por defecto si están vacíos o no existen
+if(!file_exists($filesTxt['txt_asign'])) @file_put_contents($filesTxt['txt_asign'], "El usuario declara recibir el activo en custodia...");
+if(!file_exists($filesTxt['txt_baja']))  @file_put_contents($filesTxt['txt_baja'], "CERTIFICACIÓN DE BAJA: El activo ha sido retirado del inventario...");
+if(!file_exists($filesTxt['txt_masiva'])) @file_put_contents($filesTxt['txt_masiva'], "MANIFIESTO DE ENTREGA: El responsable recibe a entera satisfacción los equipos detallados...");
 
 
 // 3. PROCESAMIENTO DEL FORMULARIO (Guardar Cambios)
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     try {
-        $currentConfig = json_decode(file_get_contents($configFile), true);
+        // Cargar configuración actual
+        $jsonContent = @file_get_contents($configFile);
+        if ($jsonContent === false) throw new Exception("No se pudo leer core/config.json");
+        
+        $currentConfig = json_decode($jsonContent, true);
+        if (!$currentConfig) $currentConfig = []; // Fallback si el JSON estaba corrupto
 
         // A. Configuración de Correo
-        $currentConfig['mail']['smtp_user'] = $_POST['smtp_user'];
+        $currentConfig['mail']['smtp_user'] = trim($_POST['smtp_user']);
         if (!empty($_POST['smtp_pass'])) {
-            $currentConfig['mail']['smtp_pass'] = $_POST['smtp_pass'];
+            $currentConfig['mail']['smtp_pass'] = trim($_POST['smtp_pass']);
         }
 
         // B. Configuración LDAP
-        $currentConfig['ldap']['bind_user'] = $_POST['ldap_user'];
+        $currentConfig['ldap']['bind_user'] = trim($_POST['ldap_user']);
         if (!empty($_POST['ldap_pass'])) {
-            $currentConfig['ldap']['bind_pass'] = $_POST['ldap_pass'];
+            $currentConfig['ldap']['bind_pass'] = trim($_POST['ldap_pass']);
         }
 
         // C. Configuración Base de Datos
-        $currentConfig['db']['user'] = $_POST['db_user'];
+        $currentConfig['db']['user'] = trim($_POST['db_user']);
         if (!empty($_POST['db_pass'])) {
-            $currentConfig['db']['pass'] = $_POST['db_pass'];
+            $currentConfig['db']['pass'] = trim($_POST['db_pass']);
         }
 
-        // Guardar JSON
-        if (file_put_contents($configFile, json_encode($currentConfig, JSON_PRETTY_PRINT))) {
-            // Guardar Textos Legales
-            file_put_contents($filesTxt['txt_asign'], $_POST['texto_asign']);
-            file_put_contents($filesTxt['txt_baja'],  $_POST['texto_baja']);
-            file_put_contents($filesTxt['txt_masiva'], $_POST['texto_masiva']); // Guardado del nuevo campo
-            
-            $msg = "<div class='alert success'>✅ Configuración y textos actualizados correctamente.</div>";
-        } else {
-            throw new Exception("No se pudo escribir en el archivo de configuración.");
+        // GUARDADO DE DATOS (Validando escritura)
+        
+        // 1. Guardar JSON
+        $jsonSaved = file_put_contents($configFile, json_encode($currentConfig, JSON_PRETTY_PRINT));
+        
+        // 2. Guardar Textos (Usando trim para evitar espacios vacíos)
+        $txt1 = file_put_contents($filesTxt['txt_asign'], trim($_POST['texto_asign']));
+        $txt2 = file_put_contents($filesTxt['txt_baja'],  trim($_POST['texto_baja']));
+        $txt3 = file_put_contents($filesTxt['txt_masiva'], trim($_POST['texto_masiva']));
+
+        // Verificar si hubo errores de escritura
+        if ($jsonSaved === false || $txt1 === false || $txt2 === false || $txt3 === false) {
+            throw new Exception("Error de permisos: No se pudieron escribir los archivos en /core/. Ejecute: sudo chown -R www-data ../core");
         }
+
+        $msg = "<div class='alert success'>✅ Configuración y textos actualizados correctamente.</div>";
 
     } catch (Exception $e) {
         $msg = "<div class='alert error'>❌ Error al guardar: " . $e->getMessage() . "</div>";
     }
 }
 
-// 4. LECTURA DE VALORES ACTUALES
-$data = json_decode(file_get_contents($configFile), true);
+// 4. LECTURA DE VALORES ACTUALES (Para mostrar en los inputs)
+$data = json_decode(@file_get_contents($configFile), true);
+// Fallback visual si falla la lectura
+if (!$data) $data = ['mail'=>[], 'ldap'=>[], 'db'=>[]];
+
 $txt_asign  = file_exists($filesTxt['txt_asign']) ? file_get_contents($filesTxt['txt_asign']) : '';
-$txt_baja   = file_exists($filesTxt['txt_baja']) ? file_get_contents($filesTxt['txt_baja']) : '';
-$txt_masiva = file_exists($filesTxt['txt_masiva']) ? file_get_contents($filesTxt['txt_masiva']) : '';
+$txt_baja   = file_exists($filesTxt['txt_baja'])  ? file_get_contents($filesTxt['txt_baja'])  : '';
+$txt_masiva = file_exists($filesTxt['txt_masiva'])? file_get_contents($filesTxt['txt_masiva']) : '';
 ?>
 
 <!DOCTYPE html>
