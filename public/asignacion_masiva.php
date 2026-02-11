@@ -1,7 +1,7 @@
 <?php
 /**
  * public/asignacion_masiva.php
- * Versión 6.0 - UI con Switches de Seguridad + Protección Avanzada CSV
+ * Versión 6.1 - CORRECCIÓN: Validación y guardado de equipos
  * PROTECCIÓN: Detección automática de delimitadores, limpieza de datos, validación robusta
  */
 require_once '../core/db.php';
@@ -84,7 +84,7 @@ function esEncabezado($fila) {
 
 // --- LÓGICA PHP ---
 
-// FASE 1: PROCESAMIENTO
+// FASE 1: PROCESAMIENTO DEL CSV
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['upload_csv'])) {
     if (isset($_FILES['csv_file']) && $_FILES['csv_file']['error'] == 0) {
         $ext = pathinfo($_FILES['csv_file']['name'], PATHINFO_EXTENSION);
@@ -196,18 +196,32 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['upload_csv'])) {
     }
 }
 
-// FASE 2: GUARDADO
+// FASE 2: GUARDADO EN BASE DE DATOS
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirm_save'])) {
     try {
+        // Decodificar JSON
         $items = json_decode($_POST['items_json'], true);
         
+        // VALIDACIÓN: Verificar que el JSON se decodificó correctamente
+        if (!is_array($items) || count($items) == 0) {
+            throw new Exception("Error al decodificar los datos del formulario. Por favor, intenta nuevamente.");
+        }
+        
+        // Obtener información del lugar
         $stmt_l = $pdo->prepare("SELECT sede, nombre FROM lugares WHERE id = ?");
         $stmt_l->execute([$_POST['id_lugar']]);
         $l = $stmt_l->fetch();
         
+        if (!$l) {
+            throw new Exception("Lugar seleccionado no válido.");
+        }
+        
         $pdo->beginTransaction();
         $serials_procesados = [];
+        $equipos_procesados = 0;
+        $equipos_saltados = 0;
         
+        // Preparar consulta SQL
         $sql = "INSERT INTO bitacora (serial_equipo, id_lugar, sede, ubicacion, campo_adic1, campo_adic2, tipo_evento, correo_responsable, responsable_secundario, tecnico_responsable, hostname, fecha_evento, check_dlo, check_antivirus) VALUES (?, ?, ?, ?, ?, ?, 'Asignacion_Masiva', ?, ?, ?, ?, NOW(), ?, ?)";
         $stmt = $pdo->prepare($sql);
 
@@ -215,41 +229,66 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirm_save'])) {
         $dlo_status = isset($_POST['check_dlo']) ? 1 : 0;
         $av_status  = isset($_POST['check_antivirus']) ? 1 : 0;
 
-        foreach ($items as $item) {
-            if ($item['status'] !== 'valid') continue;
+        // Procesar cada equipo
+        foreach ($items as $key => $item) {
+            // VALIDACIÓN MEJORADA: Solo procesar equipos válidos con serial
+            if (!isset($item['serial']) || empty($item['serial'])) {
+                $equipos_saltados++;
+                continue;
+            }
             
+            if (isset($item['status']) && $item['status'] !== 'valid') {
+                $equipos_saltados++;
+                continue;
+            }
+            
+            // Ejecutar inserción
             $stmt->execute([
                 $item['serial'], 
                 $_POST['id_lugar'], 
                 $l['sede'], 
                 $l['nombre'], 
-                $item['adic1'], 
-                $item['adic2'],
+                $item['adic1'] ?? '', 
+                $item['adic2'] ?? '',
                 $_POST['correo_resp_real'], 
                 $_POST['correo_sec_real'] ?: null, 
                 $_SESSION['nombre'],
-                strtoupper($item['hostname']), 
+                strtoupper($item['hostname'] ?? ''), 
                 $dlo_status, 
                 $av_status
             ]);
             
             $serials_procesados[] = $item['serial'];
+            $equipos_procesados++;
         }
         
         $pdo->commit();
 
+        // Verificar resultados
         if (count($serials_procesados) > 0) {
             $serials_str = implode(',', $serials_procesados);
             header("Location: generar_acta_masiva.php?serials=" . urlencode($serials_str));
             exit;
         } else {
-            $msg = "<div class='alert error'>⚠️ No se procesó ningún equipo válido.</div>"; 
+            // Si llegamos aquí, algo salió mal
+            $msg = "<div class='alert error'>⚠️ No se procesó ningún equipo válido. Equipos procesados: $equipos_procesados, Equipos saltados: $equipos_saltados</div>"; 
             $step = 1;
+            
+            // LOG DE DEPURACIÓN
+            error_log("=== DEBUG ASIGNACIÓN MASIVA ===");
+            error_log("Total items recibidos: " . count($items));
+            error_log("Equipos procesados: $equipos_procesados");
+            error_log("Equipos saltados: $equipos_saltados");
+            error_log("Items completos: " . print_r($items, true));
         }
     } catch (Exception $e) {
         if ($pdo->inTransaction()) $pdo->rollBack();
         $msg = "<div class='alert error'>❌ Error: " . htmlspecialchars($e->getMessage()) . "</div>"; 
         $step = 2;
+        
+        // LOG DE ERROR
+        error_log("Error en asignación masiva: " . $e->getMessage());
+        error_log("Trace: " . $e->getTraceAsString());
     }
 }
 ?>
@@ -855,8 +894,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirm_save'])) {
                 </div>
             </div>
 
-            <!-- CRÍTICO: Usar comillas simples en el atributo, sin escapar el JSON -->
-            <input type="hidden" name="items_json" value='<?php echo json_encode($preview_data); ?>'>
+            <!-- JSON CON HTMLSPECIALCHARS PARA EVITAR PROBLEMAS -->
+            <input type="hidden" name="items_json" value="<?php echo htmlspecialchars(json_encode($preview_data), ENT_QUOTES, 'UTF-8'); ?>">
             
             <div style="display:flex; gap:20px; margin-top:30px; flex-wrap: wrap;">
                 <a href="asignacion_masiva.php" style="flex:1; min-width: 200px; text-align:center; padding:15px; background:#64748b; color:white; text-decoration:none; border-radius:8px; font-weight:bold;">CANCELAR</a>
