@@ -24,18 +24,107 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // --- A. REPORTE INVENTARIO MAESTRO (Snapshot Actual) ---
     if (isset($_POST['btn_inventario'])) {
-        header('Content-Disposition: attachment; filename=Inventario_Maestro_' . $date_now . '.csv');
-        fputcsv($output, ['PLACA', 'SERIAL', 'MARCA', 'MODELO', 'MODALIDAD', 'ESTADO', 'UBICACION ACTUAL', 'RESPONSABLE', 'FECHA ULT. MOV']);
         
-        $sql = "SELECT e.placa_ur, e.serial, e.marca, e.modelo, e.modalidad, e.estado_maestro, 
-                b.ubicacion, b.correo_responsable, b.fecha_evento
+        try {
+            // Sanitizar nombre de archivo
+            $safe_date = preg_replace('/[^a-zA-Z0-9_-]/', '', $date_now);
+            
+            // Headers para descarga
+            header('Content-Type: text/csv; charset=utf-8');
+            header('Content-Disposition: attachment; filename=Inventario_Maestro_' . $safe_date . '.csv');
+            header('Cache-Control: no-cache, must-revalidate');
+            header('Expires: 0');
+            
+            $output = fopen('php://output', 'w');
+            
+            // BOM UTF-8 para compatibilidad con Excel
+            fprintf($output, chr(0xEF).chr(0xBB).chr(0xBF));
+            
+            // Encabezados
+            fputcsv($output, [
+                'PLACA',
+                'SERIAL',
+                'MARCA',
+                'MODELO',
+                'MODALIDAD',
+                'PRECIO',
+                'FECHA_COMPRA',
+                'VIDA_UTIL',
+                'ANTIGUEDAD_ANIOS',
+                'ESTADO_MAESTRO',
+                'TIPO_ULTIMO_EVENTO',
+                'FECHA_ULTIMO_MOVIMIENTO',
+                'ESTADO_OPERATIVO',
+                'SEDE',
+                'UBICACION',
+                'RESPONSABLE',
+                'TECNICO_ULTIMO_MOVIMIENTO'
+            ]);
+            
+            // Consulta optimizada (misma lógica, mejor sintaxis)
+            $sql = "
+                SELECT 
+                    e.placa_ur AS PLACA,
+                    e.serial AS SERIAL,
+                    e.marca AS MARCA,
+                    e.modelo AS MODELO,
+                    e.modalidad AS MODALIDAD,
+                    e.precio AS PRECIO,
+                    e.fecha_compra AS FECHA_COMPRA,
+                    e.vida_util AS VIDA_UTIL,
+                    TIMESTAMPDIFF(YEAR, e.fecha_compra, CURDATE()) AS ANTIGUEDAD_ANIOS,
+                    e.estado_maestro AS ESTADO_MAESTRO,
+                    b.tipo_evento AS TIPO_ULTIMO_EVENTO,
+                    b.fecha_evento AS FECHA_ULTIMO_MOVIMIENTO,
+                    CASE 
+                        WHEN b.tipo_evento IN ('Asignación','Asignacion_Masiva') THEN 'Asignado'
+                        WHEN b.tipo_evento IN ('Devolución','Alta','Alistamiento') THEN 'Bodega'
+                        WHEN b.tipo_evento = 'Baja' THEN 'Baja'
+                        WHEN b.tipo_evento IS NULL THEN 'Sin historial'
+                        ELSE 'Revisar'
+                    END AS ESTADO_OPERATIVO,
+                    b.sede AS SEDE,
+                    b.ubicacion AS UBICACION,
+                    b.correo_responsable AS RESPONSABLE,
+                    b.tecnico_responsable AS TECNICO_ULTIMO_MOVIMIENTO
                 FROM equipos e
-                LEFT JOIN bitacora b ON e.serial = b.serial_equipo 
-                AND b.id_evento = (SELECT MAX(id_evento) FROM bitacora WHERE serial_equipo = e.serial)";
+                LEFT JOIN bitacora b 
+                    ON e.serial = b.serial_equipo
+                    AND b.fecha_evento = (
+                        SELECT MAX(b2.fecha_evento)
+                        FROM bitacora b2
+                        WHERE b2.serial_equipo = e.serial
+                    )
+                ORDER BY e.placa_ur
+            ";
+            
+            $stmt = $pdo->query($sql);
+            
+            // Verificar que hay resultados
+            if ($stmt) {
+                while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+                    // Normalizar valores nulos para el CSV
+                    foreach ($row as $key => $value) {
+                        if ($value === null) {
+                            $row[$key] = '';
+                        }
+                    }
+                    fputcsv($output, $row);
+                }
+            }
+            
+            fclose($output);
+            
+        } catch (PDOException $e) {
+            // Log del error (no mostrar al usuario información sensible)
+            error_log("Error en reporte inventario: " . $e->getMessage());
+            
+            // Mensaje genérico al usuario
+            http_response_code(500);
+            die("Error al generar el reporte. Por favor, contacte al administrador.");
+        }
         
-        $stmt = $pdo->query($sql);
-        while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) { fputcsv($output, $row); }
-        fclose($output); exit;
+        exit;
     }
 
     // --- B. REPORTE DE MOVIMIENTOS (Trazabilidad por Fechas) ---
