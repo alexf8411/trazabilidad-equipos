@@ -149,8 +149,6 @@ $rol = $_SESSION['rol']; // Atajo para escribir menos código
             </a>
         <?php endif; ?>
 
-        
-
     </div>
 </div>
 
