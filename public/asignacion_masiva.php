@@ -201,7 +201,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirm_save'])) {
     try {
         $items = json_decode($_POST['items_json'], true);
         
-        // VALIDACIÓN CORREGIDA - igual al código original
         $stmt_l = $pdo->prepare("SELECT sede, nombre FROM lugares WHERE id = ?");
         $stmt_l->execute([$_POST['id_lugar']]);
         $l = $stmt_l->fetch();
@@ -856,8 +855,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirm_save'])) {
                 </div>
             </div>
 
-            <!-- CRÍTICO: Sin htmlspecialchars como en el original -->
-            <input type="hidden" name="items_json" value='<?= json_encode($preview_data) ?>'>
+            <!-- CRÍTICO: Usar comillas simples en el atributo, sin escapar el JSON -->
+            <input type="hidden" name="items_json" value='<?php echo json_encode($preview_data); ?>'>
             
             <div style="display:flex; gap:20px; margin-top:30px; flex-wrap: wrap;">
                 <a href="asignacion_masiva.php" style="flex:1; min-width: 200px; text-align:center; padding:15px; background:#64748b; color:white; text-decoration:none; border-radius:8px; font-weight:bold;">CANCELAR</a>
