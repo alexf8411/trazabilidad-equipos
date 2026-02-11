@@ -1,8 +1,10 @@
 <?php
 /**
  * public/alta_equipos.php
- * Módulo de Registro Maestro (Recursos) - Versión V1.4
- * Ajuste: Placa UR ahora es un campo manual obligatorio.
+ * Módulo de Registro Maestro (Recursos) - Versión V1.5 Responsive
+ * Ajustes:
+ * - Placa UR manual obligatoria.
+ * - CSS adaptado para móviles (Media Queries).
  */
 require_once '../core/db.php';
 require_once '../core/session.php';
@@ -20,7 +22,7 @@ $msg = "";
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     // Sanitización
     $serial = trim($_POST['serial']);
-    $placa  = trim($_POST['placa']); // NUEVO: Captura manual
+    $placa  = trim($_POST['placa']); 
     
     $marca = trim($_POST['marca']);
     $modelo = trim($_POST['modelo']);
@@ -57,7 +59,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         }
 
         // C. INSERTAR EN BITÁCORA
-        // Nota: El Hostname inicial sigue siendo el Serial por defecto hasta que se configure en 'Movilidad'
         $sql_bitacora = "INSERT INTO bitacora (
                             serial_equipo, id_lugar, sede, ubicacion, 
                             tipo_evento, correo_responsable, fecha_evento, 
@@ -77,15 +78,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         ]);
 
         $pdo->commit();
-        // Redireccionamos mostrando la Placa como referencia
         header("Location: alta_equipos.php?status=success&p=$placa");
         exit;
 
     } catch (PDOException $e) {
         $pdo->rollBack();
         if ($e->getCode() == '23000') {
-            // El error puede ser por Serial o por Placa duplicada
-            $msg = "<div class='toast error'>⚠️ Error: El <b>Serial</b> o la <b>Placa UR</b> ya están registrados en el sistema. Verifique los datos.</div>";
+            $msg = "<div class='toast error'>⚠️ Error: El <b>Serial</b> o la <b>Placa UR</b> ya están registrados.</div>";
         } else {
             $msg = "<div class='toast error'>❌ Error SQL: " . $e->getMessage() . "</div>";
         }
@@ -97,7 +96,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
 if (isset($_GET['status']) && $_GET['status'] == 'success') {
     $placa_creada = htmlspecialchars($_GET['p']);
-    $msg = "<div class='toast success'>✅ Equipo con Placa <b>$placa_creada</b> ingresado correctamente a Bodega.</div>";
+    $msg = "<div class='toast success'>✅ Equipo con Placa <b>$placa_creada</b> ingresado correctamente.</div>";
 }
 ?>
 
@@ -105,27 +104,55 @@ if (isset($_GET['status']) && $_GET['status'] == 'success') {
 <html lang="es">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Alta de Equipos - URTRACK</title>
     <style>
         :root { --primary: #002D72; --accent: #28a745; --bg: #f0f2f5; --white: #fff; }
-        body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); padding: 20px; color: #333; }
-        .container { max-width: 850px; margin: 0 auto; }
+        body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); padding: 20px; color: #333; margin: 0; }
+        
+        .container { max-width: 850px; margin: 0 auto; width: 100%; }
+        
         .main-card { background: var(--white); padding: 30px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }
-        header { border-bottom: 2px solid var(--primary); padding-bottom: 15px; margin-bottom: 25px; display: flex; justify-content: space-between; align-items: center; }
+        
+        header { border-bottom: 2px solid var(--primary); padding-bottom: 15px; margin-bottom: 25px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
+        
         h1 { margin: 0; color: var(--primary); font-size: 1.5rem; }
-        .bulk-banner { background: #e7f1ff; border: 1px solid #b6d4fe; padding: 15px; border-radius: 8px; margin-bottom: 25px; display: flex; justify-content: space-between; align-items: center; }
-        .btn-bulk { background: #0d6efd; color: white; text-decoration: none; padding: 10px 20px; border-radius: 5px; font-weight: bold; font-size: 0.9rem; }
+        
+        .bulk-banner { background: #e7f1ff; border: 1px solid #b6d4fe; padding: 15px; border-radius: 8px; margin-bottom: 25px; display: flex; justify-content: space-between; align-items: center; gap: 15px; }
+        
+        .btn-bulk { background: #0d6efd; color: white; text-decoration: none; padding: 10px 20px; border-radius: 5px; font-weight: bold; font-size: 0.9rem; white-space: nowrap; }
         .btn-bulk:hover { background: #0b5ed7; }
+        
         .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        
         .form-group { margin-bottom: 15px; }
         label { display: block; margin-bottom: 5px; font-weight: 600; font-size: 0.9rem; color: #555; }
-        input, select { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+        input, select { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; font-size: 16px; /* Evita zoom en iOS */ }
+        
         .full-width { grid-column: 1 / -1; }
-        .btn-submit { background: var(--primary); color: white; width: 100%; padding: 12px; border: none; border-radius: 4px; font-size: 1rem; font-weight: bold; cursor: pointer; }
+        
+        .btn-submit { background: var(--primary); color: white; width: 100%; padding: 12px; border: none; border-radius: 4px; font-size: 1rem; font-weight: bold; cursor: pointer; margin-top: 10px; }
+        
         .toast { padding: 15px; border-radius: 4px; margin-bottom: 20px; border-left: 5px solid; }
         .success { background: #d4edda; color: #155724; border-color: #28a745; }
         .error { background: #f8d7da; color: #721c24; border-color: #dc3545; }
         .info-box { background: #e9ecef; padding: 10px; border-radius: 4px; font-size: 0.85rem; }
+
+        /* --- MEDIA QUERIES PARA CELULARES --- */
+        @media (max-width: 768px) {
+            body { padding: 15px; }
+            .main-card { padding: 20px; }
+            
+            /* La grilla se convierte en una sola columna */
+            .form-grid { grid-template-columns: 1fr; gap: 15px; }
+            
+            /* El banner se apila verticalmente */
+            .bulk-banner { flex-direction: column; text-align: center; }
+            .btn-bulk { width: 100%; text-align: center; box-sizing: border-box; }
+            
+            header { flex-direction: column; align-items: flex-start; }
+            header a { align-self: flex-end; }
+        }
     </style>
 </head>
 <body>
@@ -199,7 +226,7 @@ if (isset($_GET['status']) && $_GET['status'] == 'success') {
                 </div>
 
                 <div class="full-width info-box">
-                    ℹ️ <strong>Nota:</strong> El equipo ingresará a <strong>Bodega de Tecnología</strong>. El Hostname se asignará inicialmente igual al Serial.
+                    ℹ️ <strong>Nota:</strong> El equipo ingresará a <strong>Bodega de Tecnología</strong>.
                 </div>
                 
                 <div class="full-width">
