@@ -1,7 +1,7 @@
 <?php
 /**
  * public/asignacion_masiva.php
- * Versión 5.0 - UI "Anti-Tontos" con Drag & Drop
+ * Versión 5.0 - UI con Switches de Seguridad (Igual a movimientos)
  */
 require_once '../core/db.php';
 require_once '../core/session.php';
@@ -20,7 +20,7 @@ $step = 1;
 $preview_data = [];
 $csv_errors = false;
 
-// --- LÓGICA PHP (Backend idéntico, solo cambia la presentación) ---
+// --- LÓGICA PHP ---
 
 // FASE 1: PROCESAMIENTO
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['upload_csv'])) {
@@ -77,12 +77,16 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirm_save'])) {
         $sql = "INSERT INTO bitacora (serial_equipo, id_lugar, sede, ubicacion, campo_adic1, campo_adic2, tipo_evento, correo_responsable, responsable_secundario, tecnico_responsable, hostname, fecha_evento, check_dlo, check_antivirus) VALUES (?, ?, ?, ?, ?, ?, 'Asignacion_Masiva', ?, ?, ?, ?, NOW(), ?, ?)";
         $stmt = $pdo->prepare($sql);
 
+        // Captura de estados de los switches
+        $dlo_status = isset($_POST['check_dlo']) ? 1 : 0;
+        $av_status  = isset($_POST['check_antivirus']) ? 1 : 0;
+
         foreach ($items as $item) {
             if ($item['status'] !== 'valid') continue;
             $stmt->execute([
                 $item['serial'], $_POST['id_lugar'], $l['sede'], $l['nombre'], $item['adic1'], $item['adic2'],
                 $_POST['correo_resp_real'], $_POST['correo_sec_real'] ?: null, $_SESSION['nombre'],
-                strtoupper($item['hostname']), (isset($_POST['check_dlo'])?1:0), (isset($_POST['check_antivirus'])?1:0)
+                strtoupper($item['hostname']), $dlo_status, $av_status
             ]);
             $serials_procesados[] = $item['serial'];
         }
@@ -108,7 +112,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirm_save'])) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Asignación Masiva | URTRACK</title>
     <style>
-        :root { --primary: #4f46e5; --primary-hover: #4338ca; --bg: #f8fafc; --text: #334155; --border: #cbd5e1; }
+        :root { --primary: #4f46e5; --primary-hover: #4338ca; --bg: #f8fafc; --text: #334155; --border: #cbd5e1; --success: #22c55e; }
         body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); padding: 20px; margin: 0; color: var(--text); }
         
         .card { background: white; padding: 40px; border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); max-width: 900px; margin: auto; }
@@ -117,7 +121,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirm_save'])) {
         .btn-back { color: #64748b; text-decoration: none; font-weight: 600; display: flex; align-items: center; gap: 5px; transition: color 0.2s; }
         .btn-back:hover { color: var(--primary); }
 
-        /* DROPZONE STYLES (Lo nuevo) */
         .dropzone-container {
             border: 3px dashed var(--border);
             border-radius: 12px;
@@ -139,7 +142,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirm_save'])) {
         .file-input { position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
         
         .file-info {
-            display: none; /* Oculto por defecto */
+            display: none;
             margin-top: 20px;
             padding: 15px;
             background: #dcfce7;
@@ -151,33 +154,61 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirm_save'])) {
         }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 
-        /* Instrucciones */
         .instructions { margin-top: 30px; display: flex; gap: 20px; flex-wrap: wrap; }
         .instruction-box { flex: 1; background: #f1f5f9; padding: 20px; border-radius: 8px; min-width: 250px; }
         .instruction-box h4 { margin-top: 0; color: var(--primary); }
         .code-pill { background: #e2e8f0; padding: 3px 8px; border-radius: 4px; font-family: monospace; font-weight: bold; font-size: 0.9em; }
 
-        /* Botones generales */
         .btn-primary { 
             background: var(--primary); color: white; border: none; padding: 15px 30px; 
             border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 1rem; 
             width: 100%; margin-top: 20px; transition: background 0.2s; 
-            display: none; /* Oculto hasta que haya archivo */
+            display: none;
         }
         .btn-primary:hover { background: var(--primary-hover); }
 
         .alert { padding: 15px; border-radius: 8px; margin-bottom: 20px; text-align:center; font-weight:bold; }
         .error { background: #fee2e2; color: #991b1b; }
 
-        /* Estilos Fase 2 (Heredados pero limpios) */
         .table-container { overflow-x: auto; margin-top: 20px; border: 1px solid var(--border); border-radius: 8px; }
         .preview-table { width: 100%; border-collapse: collapse; min-width: 600px; }
         .preview-table th { background: #f1f5f9; padding: 12px; text-align: left; }
         .preview-table td { padding: 10px; border-bottom: 1px solid #e2e8f0; }
         .row-valid { border-left: 4px solid #22c55e; background: #f0fdf4; }
         .row-invalid { border-left: 4px solid #ef4444; background: #fef2f2; }
+        
         .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; background: #f8fafc; padding: 25px; border-radius: 8px; border: 1px solid #e2e8f0; margin-top: 20px; }
         input[type="text"], select { width: 100%; padding: 12px; border: 1px solid var(--border); border-radius: 6px; box-sizing: border-box; }
+
+        /* ESTILOS PARA LOS TOGGLES DE COMPLIANCE (Igual a movimientos) */
+        .compliance-section { 
+            grid-column: span 2; 
+            display: flex; 
+            gap: 20px; 
+            background: #f0fdf4; 
+            border: 1px solid #bbf7d0; 
+            padding: 15px; 
+            border-radius: 8px; 
+            align-items: center; 
+            justify-content: space-around; 
+            margin-top: 10px;
+        }
+        .switch-container { display: flex; align-items: center; gap: 10px; }
+        .switch { position: relative; display: inline-block; width: 50px; height: 26px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { 
+            position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; 
+            background-color: #dc3545; /* Rojo por defecto */
+            transition: .4s; border-radius: 34px; 
+        }
+        .slider:before { 
+            position: absolute; content: ""; height: 20px; width: 20px; 
+            left: 3px; bottom: 3px; background-color: white; transition: .4s; 
+            border-radius: 50%; box-shadow: 0 2px 4px rgba(0,0,0,0.2); 
+        }
+        input:checked + .slider { background-color: var(--success); }
+        input:checked + .slider:before { transform: translateX(24px); }
+        .switch-label { font-weight: bold; color: #166534; font-size: 0.9rem; }
         
         @media (max-width: 768px) {
             .card { padding: 20px; }
@@ -198,7 +229,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirm_save'])) {
 
     <?php if ($step === 1): ?>
         <form method="POST" enctype="multipart/form-data" id="uploadForm">
-            
             <div class="dropzone-container" id="dropzone">
                 <input type="file" name="csv_file" id="csv_file" class="file-input" accept=".csv" required>
                 <div class="dropzone-content">
@@ -245,7 +275,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirm_save'])) {
             const fileName = document.getElementById('fileName');
             const btnUpload = document.getElementById('btnUpload');
 
-            // Efectos visuales Drag & Drop
             ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
                 dropzone.addEventListener(eventName, preventDefaults, false);
             });
@@ -266,7 +295,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirm_save'])) {
             function handleDrop(e) {
                 const dt = e.dataTransfer;
                 const files = dt.files;
-                fileInput.files = files; // Asignar al input real
+                fileInput.files = files;
                 handleFiles();
             }
 
@@ -285,12 +314,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirm_save'])) {
                         fileInfo.style.background = '#fee2e2';
                         fileInfo.style.color = '#991b1b';
                         btnUpload.style.display = 'none';
-                        fileInput.value = ''; // Limpiar
+                        fileInput.value = '';
                     }
                 }
             }
         </script>
-
     <?php endif; ?>
 
     <?php if ($step === 2): ?>
@@ -357,9 +385,24 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirm_save'])) {
                     <input type="hidden" name="correo_sec_real" id="correo_sec_real">
                 </div>
                 
-                <div style="grid-column: span 2; display:flex; gap:20px; margin-top:10px;">
-                    <label><input type="checkbox" name="check_dlo" value="1" checked> Agente DLO</label>
-                    <label><input type="checkbox" name="check_antivirus" value="1" checked> Antivirus Corp.</label>
+                <div class="compliance-section">
+                    <span style="font-size:0.8rem; text-transform:uppercase; color:#166534; font-weight:bold;">🛡️ Verificación de Seguridad Masiva</span>
+                    
+                    <div class="switch-container">
+                        <label class="switch">
+                            <input type="checkbox" name="check_dlo" value="1">
+                            <span class="slider"></span>
+                        </label>
+                        <span class="switch-label">Agente DLO/Backup</span>
+                    </div>
+
+                    <div class="switch-container">
+                        <label class="switch">
+                            <input type="checkbox" name="check_antivirus" value="1">
+                            <span class="slider"></span>
+                        </label>
+                        <span class="switch-label">Antivirus Corp.</span>
+                    </div>
                 </div>
             </div>
 
