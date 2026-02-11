@@ -1,7 +1,8 @@
 <?php
 /**
  * public/asignacion_masiva.php
- * Versión 5.0 - UI con Switches de Seguridad (Igual a movimientos)
+ * Versión 6.0 - UI con Switches de Seguridad + Protección Avanzada CSV
+ * PROTECCIÓN: Detección automática de delimitadores, limpieza de datos, validación robusta
  */
 require_once '../core/db.php';
 require_once '../core/session.php';
@@ -19,6 +20,67 @@ $msg = "";
 $step = 1; 
 $preview_data = [];
 $csv_errors = false;
+$delimitador_usado = ",";
+
+/**
+ * Detecta automáticamente el delimitador del CSV (coma, punto y coma, tabulador)
+ */
+function detectarDelimitador($archivo) {
+    $handle = fopen($archivo, 'r');
+    $primera_linea = fgets($handle);
+    fclose($handle);
+    
+    $delimitadores = [',', ';', "\t", '|'];
+    $max_count = 0;
+    $delimitador_detectado = ',';
+    
+    foreach ($delimitadores as $delim) {
+        $count = substr_count($primera_linea, $delim);
+        if ($count > $max_count) {
+            $max_count = $count;
+            $delimitador_detectado = $delim;
+        }
+    }
+    
+    return $delimitador_detectado;
+}
+
+/**
+ * Limpia y normaliza una fila del CSV
+ */
+function limpiarFila($data) {
+    // Eliminar columnas vacías al final
+    while (count($data) > 0 && trim(end($data)) === '') {
+        array_pop($data);
+    }
+    
+    // Limpiar cada celda: trim, eliminar BOM, saltos de línea internos
+    return array_map(function($celda) {
+        $celda = trim($celda);
+        $celda = str_replace(["\r", "\n", "\r\n"], ' ', $celda); // Quitar saltos internos
+        $celda = preg_replace('/\s+/', ' ', $celda); // Múltiples espacios -> uno solo
+        $celda = preg_replace('/^\xEF\xBB\xBF/', '', $celda); // Eliminar BOM UTF-8
+        return $celda;
+    }, $data);
+}
+
+/**
+ * Verifica si una fila es un encabezado
+ */
+function esEncabezado($fila) {
+    if (empty($fila) || count($fila) < 1) return false;
+    
+    $primera_celda = strtolower(trim($fila[0]));
+    $palabras_clave = ['placa', 'placa_ur', 'serial', 'hostname', 'equipo'];
+    
+    foreach ($palabras_clave as $palabra) {
+        if (stripos($primera_celda, $palabra) !== false) {
+            return true;
+        }
+    }
+    
+    return false;
+}
 
 // --- LÓGICA PHP ---
 
@@ -29,38 +91,117 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['upload_csv'])) {
         if (strtolower($ext) !== 'csv') {
             $msg = "<div class='alert error'>❌ Formato incorrecto. Solo .CSV</div>";
         } else {
-            $handle = fopen($_FILES['csv_file']['tmp_name'], "r");
-            $row_count = 0;
-            $placas_vistas = [];
-            while (($data = fgetcsv($handle, 1000, ",")) !== FALSE) {
-                $row_count++;
-                if ($row_count === 1 && (stripos($data[0], 'PLACA') !== false)) continue;
-                if ($row_count > 101) break;
+            try {
+                // Detectar delimitador automáticamente
+                $delimitador_usado = detectarDelimitador($_FILES['csv_file']['tmp_name']);
+                
+                $handle = fopen($_FILES['csv_file']['tmp_name'], "r");
+                $row_count = 0;
+                $placas_vistas = [];
+                $primera_fila_procesada = false;
+                
+                while (($data = fgetcsv($handle, 10000, $delimitador_usado)) !== FALSE) {
+                    $row_count++;
+                    
+                    // Limpiar la fila
+                    $data = limpiarFila($data);
+                    
+                    // Saltar filas completamente vacías
+                    if (count(array_filter($data)) == 0) continue;
+                    
+                    // Detectar y saltar encabezado solo en la primera fila con datos
+                    if (!$primera_fila_procesada && esEncabezado($data)) {
+                        $primera_fila_procesada = true;
+                        continue;
+                    }
+                    
+                    $primera_fila_procesada = true;
+                    
+                    // Límite de 100 equipos
+                    if (count($preview_data) >= 100) {
+                        $msg = "<div class='alert warning'>⚠️ Se alcanzó el límite de 100 equipos. El resto del archivo fue ignorado.</div>";
+                        break;
+                    }
 
-                $placa = trim($data[0] ?? '');
-                $hostname = trim($data[1] ?? '');
-                $adic1 = trim($data[2] ?? '');
-                $adic2 = trim($data[3] ?? '');
+                    // Extraer y limpiar datos
+                    $placa = strtoupper(trim($data[0] ?? ''));
+                    $hostname = strtoupper(trim($data[1] ?? ''));
+                    $adic1 = trim($data[2] ?? '');
+                    $adic2 = trim($data[3] ?? '');
 
-                if (empty($placa)) continue;
+                    // Saltar si la placa está vacía
+                    if (empty($placa)) continue;
 
-                $stmt = $pdo->prepare("SELECT serial, estado_maestro FROM equipos WHERE placa_ur = ? LIMIT 1");
-                $stmt->execute([$placa]);
-                $equipo = $stmt->fetch(PDO::FETCH_ASSOC);
+                    // Validar formato de placa (opcional: puedes ajustar según tus necesidades)
+                    // if (!preg_match('/^[A-Z0-9]+$/', $placa)) {
+                    //     $status = 'invalid'; 
+                    //     $note = 'Formato de placa inválido'; 
+                    //     $csv_errors = true;
+                    //     $preview_data[] = ['placa'=>$placa, 'hostname'=>$hostname, 'serial'=>'', 'adic1'=>$adic1, 'adic2'=>$adic2, 'status'=>$status, 'note'=>$note];
+                    //     continue;
+                    // }
 
-                $status = 'valid'; $note = 'OK'; $serial = '';
+                    // Buscar equipo en la base de datos
+                    $stmt = $pdo->prepare("SELECT serial, estado_maestro FROM equipos WHERE placa_ur = ? LIMIT 1");
+                    $stmt->execute([$placa]);
+                    $equipo = $stmt->fetch(PDO::FETCH_ASSOC);
 
-                if (!$equipo) { $status = 'invalid'; $note = 'No existe en Inventario'; $csv_errors = true; } 
-                elseif ($equipo['estado_maestro'] === 'Baja') { $status = 'invalid'; $note = 'Equipo en BAJA'; $csv_errors = true; } 
-                elseif (in_array($placa, $placas_vistas)) { $status = 'duplicated'; $note = 'Placa repetida'; $csv_errors = true; } 
-                else { $serial = $equipo['serial']; $placas_vistas[] = $placa; }
+                    $status = 'valid'; 
+                    $note = 'OK'; 
+                    $serial = '';
 
-                $preview_data[] = ['placa'=>$placa, 'hostname'=>$hostname, 'serial'=>$serial, 'adic1'=>$adic1, 'adic2'=>$adic2, 'status'=>$status, 'note'=>$note];
+                    if (!$equipo) { 
+                        $status = 'invalid'; 
+                        $note = 'No existe en Inventario'; 
+                        $csv_errors = true; 
+                    } 
+                    elseif ($equipo['estado_maestro'] === 'Baja') { 
+                        $status = 'invalid'; 
+                        $note = 'Equipo en BAJA'; 
+                        $csv_errors = true; 
+                    } 
+                    elseif (in_array($placa, $placas_vistas)) { 
+                        $status = 'duplicated'; 
+                        $note = 'Placa repetida en CSV'; 
+                        $csv_errors = true; 
+                    } 
+                    else { 
+                        $serial = $equipo['serial']; 
+                        $placas_vistas[] = $placa; 
+                    }
+
+                    $preview_data[] = [
+                        'placa' => $placa, 
+                        'hostname' => $hostname, 
+                        'serial' => $serial, 
+                        'adic1' => $adic1, 
+                        'adic2' => $adic2, 
+                        'status' => $status, 
+                        'note' => $note
+                    ];
+                }
+                
+                fclose($handle);
+                
+                if (count($preview_data) > 0) {
+                    $step = 2;
+                    $delimitador_nombre = ($delimitador_usado == ',') ? 'coma (,)' : 
+                                          (($delimitador_usado == ';') ? 'punto y coma (;)' : 
+                                          (($delimitador_usado == "\t") ? 'tabulador' : 'otro'));
+                    
+                    if (!$msg) {
+                        $msg = "<div class='alert success'>✅ Archivo procesado correctamente. Delimitador detectado: <strong>$delimitador_nombre</strong></div>";
+                    }
+                } else {
+                    $msg = "<div class='alert error'>⚠️ Archivo vacío o sin datos válidos después de limpiar filas vacías y encabezados.</div>";
+                }
+                
+            } catch (Exception $e) {
+                $msg = "<div class='alert error'>❌ Error al procesar archivo: " . htmlspecialchars($e->getMessage()) . "</div>";
             }
-            fclose($handle);
-            if (count($preview_data) > 0) $step = 2;
-            else $msg = "<div class='alert error'>⚠️ Archivo vacío o inválido.</div>";
         }
+    } else {
+        $msg = "<div class='alert error'>❌ Error al subir el archivo. Por favor, inténtalo de nuevo.</div>";
     }
 }
 
@@ -68,12 +209,22 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['upload_csv'])) {
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirm_save'])) {
     try {
         $items = json_decode($_POST['items_json'], true);
+        
+        if (!$items || count($items) == 0) {
+            throw new Exception("No se recibieron datos para procesar.");
+        }
+        
         $stmt_l = $pdo->prepare("SELECT sede, nombre FROM lugares WHERE id = ?");
         $stmt_l->execute([$_POST['id_lugar']]);
         $l = $stmt_l->fetch();
         
+        if (!$l) {
+            throw new Exception("Ubicación no encontrada.");
+        }
+        
         $pdo->beginTransaction();
         $serials_procesados = [];
+        
         $sql = "INSERT INTO bitacora (serial_equipo, id_lugar, sede, ubicacion, campo_adic1, campo_adic2, tipo_evento, correo_responsable, responsable_secundario, tecnico_responsable, hostname, fecha_evento, check_dlo, check_antivirus) VALUES (?, ?, ?, ?, ?, ?, 'Asignacion_Masiva', ?, ?, ?, ?, NOW(), ?, ?)";
         $stmt = $pdo->prepare($sql);
 
@@ -83,13 +234,25 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirm_save'])) {
 
         foreach ($items as $item) {
             if ($item['status'] !== 'valid') continue;
+            
             $stmt->execute([
-                $item['serial'], $_POST['id_lugar'], $l['sede'], $l['nombre'], $item['adic1'], $item['adic2'],
-                $_POST['correo_resp_real'], $_POST['correo_sec_real'] ?: null, $_SESSION['nombre'],
-                strtoupper($item['hostname']), $dlo_status, $av_status
+                $item['serial'], 
+                $_POST['id_lugar'], 
+                $l['sede'], 
+                $l['nombre'], 
+                $item['adic1'], 
+                $item['adic2'],
+                $_POST['correo_resp_real'], 
+                $_POST['correo_sec_real'] ?: null, 
+                $_SESSION['nombre'],
+                strtoupper($item['hostname']), 
+                $dlo_status, 
+                $av_status
             ]);
+            
             $serials_procesados[] = $item['serial'];
         }
+        
         $pdo->commit();
 
         if (count($serials_procesados) > 0) {
@@ -97,11 +260,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirm_save'])) {
             header("Location: generar_acta_masiva.php?serials=" . urlencode($serials_str));
             exit;
         } else {
-            $msg = "<div class='alert error'>⚠️ No se procesó ningún equipo.</div>"; $step = 1;
+            $msg = "<div class='alert error'>⚠️ No se procesó ningún equipo válido.</div>"; 
+            $step = 1;
         }
     } catch (Exception $e) {
         if ($pdo->inTransaction()) $pdo->rollBack();
-        $msg = "<div class='alert error'>❌ Error: " . $e->getMessage() . "</div>"; $step = 2;
+        $msg = "<div class='alert error'>❌ Error: " . htmlspecialchars($e->getMessage()) . "</div>"; 
+        $step = 2;
     }
 }
 ?>
@@ -112,13 +277,60 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirm_save'])) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Asignación Masiva | URTRACK</title>
     <style>
-        :root { --primary: #4f46e5; --primary-hover: #4338ca; --bg: #f8fafc; --text: #334155; --border: #cbd5e1; --success: #22c55e; }
-        body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); padding: 20px; margin: 0; color: var(--text); }
+        :root { 
+            --primary: #4f46e5; 
+            --primary-hover: #4338ca; 
+            --bg: #f8fafc; 
+            --text: #334155; 
+            --border: #cbd5e1; 
+            --success: #22c55e; 
+            --warning: #fbbf24;
+        }
         
-        .card { background: white; padding: 40px; border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); max-width: 900px; margin: auto; }
-        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
-        .header h2 { margin: 0; color: var(--primary); font-size: 1.8rem; }
-        .btn-back { color: #64748b; text-decoration: none; font-weight: 600; display: flex; align-items: center; gap: 5px; transition: color 0.2s; }
+        * { box-sizing: border-box; }
+        
+        body { 
+            font-family: 'Segoe UI', system-ui, sans-serif; 
+            background: var(--bg); 
+            padding: 20px; 
+            margin: 0; 
+            color: var(--text); 
+        }
+        
+        .card { 
+            background: white; 
+            padding: 40px; 
+            border-radius: 16px; 
+            box-shadow: 0 10px 25px rgba(0,0,0,0.05); 
+            max-width: 900px; 
+            margin: auto; 
+        }
+        
+        .header { 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+            margin-bottom: 30px; 
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+        
+        .header h2 { 
+            margin: 0; 
+            color: var(--primary); 
+            font-size: 1.8rem; 
+        }
+        
+        .btn-back { 
+            color: #64748b; 
+            text-decoration: none; 
+            font-weight: 600; 
+            display: flex; 
+            align-items: center; 
+            gap: 5px; 
+            transition: color 0.2s; 
+        }
+        
         .btn-back:hover { color: var(--primary); }
 
         .dropzone-container {
@@ -131,15 +343,41 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirm_save'])) {
             position: relative;
             cursor: pointer;
         }
+        
         .dropzone-container:hover, .dropzone-container.dragover {
             border-color: var(--primary);
             background: #eef2ff;
         }
-        .dropzone-icon { font-size: 4rem; color: #94a3b8; margin-bottom: 15px; display: block; }
-        .dropzone-title { font-size: 1.2rem; font-weight: bold; color: var(--text); margin-bottom: 5px; }
-        .dropzone-desc { color: #64748b; font-size: 0.9rem; margin-bottom: 20px; }
         
-        .file-input { position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+        .dropzone-icon { 
+            font-size: 4rem; 
+            color: #94a3b8; 
+            margin-bottom: 15px; 
+            display: block; 
+        }
+        
+        .dropzone-title { 
+            font-size: 1.2rem; 
+            font-weight: bold; 
+            color: var(--text); 
+            margin-bottom: 5px; 
+        }
+        
+        .dropzone-desc { 
+            color: #64748b; 
+            font-size: 0.9rem; 
+            margin-bottom: 20px; 
+        }
+        
+        .file-input { 
+            position: absolute; 
+            top: 0; 
+            left: 0; 
+            width: 100%; 
+            height: 100%; 
+            opacity: 0; 
+            cursor: pointer; 
+        }
         
         .file-info {
             display: none;
@@ -152,35 +390,182 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirm_save'])) {
             font-weight: bold;
             animation: fadeIn 0.3s ease;
         }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        
+        @keyframes fadeIn { 
+            from { opacity: 0; transform: translateY(10px); } 
+            to { opacity: 1; transform: translateY(0); } 
+        }
 
-        .instructions { margin-top: 30px; display: flex; gap: 20px; flex-wrap: wrap; }
-        .instruction-box { flex: 1; background: #f1f5f9; padding: 20px; border-radius: 8px; min-width: 250px; }
-        .instruction-box h4 { margin-top: 0; color: var(--primary); }
-        .code-pill { background: #e2e8f0; padding: 3px 8px; border-radius: 4px; font-family: monospace; font-weight: bold; font-size: 0.9em; }
+        .instructions { 
+            margin-top: 30px; 
+            display: flex; 
+            gap: 20px; 
+            flex-wrap: wrap; 
+        }
+        
+        .instruction-box { 
+            flex: 1; 
+            background: #f1f5f9; 
+            padding: 20px; 
+            border-radius: 8px; 
+            min-width: 250px; 
+        }
+        
+        .instruction-box h4 { 
+            margin-top: 0; 
+            color: var(--primary); 
+        }
+        
+        .code-pill { 
+            background: #e2e8f0; 
+            padding: 3px 8px; 
+            border-radius: 4px; 
+            font-family: monospace; 
+            font-weight: bold; 
+            font-size: 0.9em; 
+        }
+        
+        .tips-box {
+            background: #e7f3ff;
+            border-left: 4px solid var(--primary);
+            padding: 15px;
+            margin-top: 20px;
+            border-radius: 6px;
+        }
+        
+        .tips-box h4 {
+            margin: 0 0 10px 0;
+            color: var(--primary);
+            font-size: 0.95rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .tips-box ul {
+            margin: 0;
+            padding-left: 20px;
+            font-size: 0.85rem;
+            color: #333;
+        }
+        
+        .tips-box li {
+            margin-bottom: 5px;
+        }
 
         .btn-primary { 
-            background: var(--primary); color: white; border: none; padding: 15px 30px; 
-            border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 1rem; 
-            width: 100%; margin-top: 20px; transition: background 0.2s; 
+            background: var(--primary); 
+            color: white; 
+            border: none; 
+            padding: 15px 30px; 
+            border-radius: 8px; 
+            cursor: pointer; 
+            font-weight: bold; 
+            font-size: 1rem; 
+            width: 100%; 
+            margin-top: 20px; 
+            transition: background 0.2s; 
             display: none;
         }
+        
         .btn-primary:hover { background: var(--primary-hover); }
 
-        .alert { padding: 15px; border-radius: 8px; margin-bottom: 20px; text-align:center; font-weight:bold; }
-        .error { background: #fee2e2; color: #991b1b; }
-
-        .table-container { overflow-x: auto; margin-top: 20px; border: 1px solid var(--border); border-radius: 8px; }
-        .preview-table { width: 100%; border-collapse: collapse; min-width: 600px; }
-        .preview-table th { background: #f1f5f9; padding: 12px; text-align: left; }
-        .preview-table td { padding: 10px; border-bottom: 1px solid #e2e8f0; }
-        .row-valid { border-left: 4px solid #22c55e; background: #f0fdf4; }
-        .row-invalid { border-left: 4px solid #ef4444; background: #fef2f2; }
+        .alert { 
+            padding: 15px; 
+            border-radius: 8px; 
+            margin-bottom: 20px; 
+            text-align: center; 
+            font-weight: bold;
+            animation: slideIn 0.4s ease;
+        }
         
-        .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; background: #f8fafc; padding: 25px; border-radius: 8px; border: 1px solid #e2e8f0; margin-top: 20px; }
-        input[type="text"], select { width: 100%; padding: 12px; border: 1px solid var(--border); border-radius: 6px; box-sizing: border-box; }
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateX(-20px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+        
+        .error { 
+            background: #fee2e2; 
+            color: #991b1b; 
+            border-left: 6px solid #dc2626;
+        }
+        
+        .success {
+            background: #d4edda;
+            color: #155724;
+            border-left: 6px solid var(--success);
+        }
+        
+        .warning {
+            background: #fff3cd;
+            color: #856404;
+            border-left: 6px solid var(--warning);
+        }
 
-        /* ESTILOS PARA LOS TOGGLES DE COMPLIANCE (Igual a movimientos) */
+        .table-container { 
+            overflow-x: auto; 
+            margin-top: 20px; 
+            border: 1px solid var(--border); 
+            border-radius: 8px; 
+        }
+        
+        .preview-table { 
+            width: 100%; 
+            border-collapse: collapse; 
+            min-width: 600px; 
+        }
+        
+        .preview-table th { 
+            background: #f1f5f9; 
+            padding: 12px; 
+            text-align: left; 
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            color: #64748b;
+        }
+        
+        .preview-table td { 
+            padding: 10px; 
+            border-bottom: 1px solid #e2e8f0; 
+            font-size: 0.9rem;
+        }
+        
+        .row-valid { 
+            border-left: 4px solid #22c55e; 
+            background: #f0fdf4; 
+        }
+        
+        .row-invalid { 
+            border-left: 4px solid #ef4444; 
+            background: #fef2f2; 
+        }
+        
+        .row-duplicated {
+            border-left: 4px solid #f59e0b;
+            background: #fffbeb;
+        }
+        
+        .form-grid { 
+            display: grid; 
+            grid-template-columns: 1fr 1fr; 
+            gap: 20px; 
+            background: #f8fafc; 
+            padding: 25px; 
+            border-radius: 8px; 
+            border: 1px solid #e2e8f0; 
+            margin-top: 20px; 
+        }
+        
+        input[type="text"], select { 
+            width: 100%; 
+            padding: 12px; 
+            border: 1px solid var(--border); 
+            border-radius: 6px; 
+            box-sizing: border-box; 
+            font-size: 0.95rem;
+        }
+
+        /* ESTILOS PARA LOS TOGGLES DE COMPLIANCE */
         .compliance-section { 
             grid-column: span 2; 
             display: flex; 
@@ -192,28 +577,84 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirm_save'])) {
             align-items: center; 
             justify-content: space-around; 
             margin-top: 10px;
+            flex-wrap: wrap;
         }
-        .switch-container { display: flex; align-items: center; gap: 10px; }
-        .switch { position: relative; display: inline-block; width: 50px; height: 26px; }
-        .switch input { opacity: 0; width: 0; height: 0; }
+        
+        .switch-container { 
+            display: flex; 
+            align-items: center; 
+            gap: 10px; 
+        }
+        
+        .switch { 
+            position: relative; 
+            display: inline-block; 
+            width: 50px; 
+            height: 26px; 
+        }
+        
+        .switch input { 
+            opacity: 0; 
+            width: 0; 
+            height: 0; 
+        }
+        
         .slider { 
-            position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; 
-            background-color: #dc3545; /* Rojo por defecto */
-            transition: .4s; border-radius: 34px; 
+            position: absolute; 
+            cursor: pointer; 
+            top: 0; 
+            left: 0; 
+            right: 0; 
+            bottom: 0; 
+            background-color: #dc3545;
+            transition: .4s; 
+            border-radius: 34px; 
         }
+        
         .slider:before { 
-            position: absolute; content: ""; height: 20px; width: 20px; 
-            left: 3px; bottom: 3px; background-color: white; transition: .4s; 
-            border-radius: 50%; box-shadow: 0 2px 4px rgba(0,0,0,0.2); 
+            position: absolute; 
+            content: ""; 
+            height: 20px; 
+            width: 20px; 
+            left: 3px; 
+            bottom: 3px; 
+            background-color: white; 
+            transition: .4s; 
+            border-radius: 50%; 
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2); 
         }
+        
         input:checked + .slider { background-color: var(--success); }
         input:checked + .slider:before { transform: translateX(24px); }
-        .switch-label { font-weight: bold; color: #166534; font-size: 0.9rem; }
+        
+        .switch-label { 
+            font-weight: bold; 
+            color: #166534; 
+            font-size: 0.9rem; 
+        }
         
         @media (max-width: 768px) {
             .card { padding: 20px; }
+            .header h2 { font-size: 1.4rem; }
             .form-grid { grid-template-columns: 1fr; }
             .instructions { flex-direction: column; }
+            .instruction-box { min-width: 100%; }
+            .compliance-section { 
+                flex-direction: column; 
+                gap: 15px;
+                align-items: flex-start;
+            }
+            .preview-table th,
+            .preview-table td {
+                padding: 8px;
+                font-size: 0.8rem;
+            }
+        }
+        
+        @media (max-width: 480px) {
+            .header h2 { font-size: 1.2rem; }
+            .dropzone-icon { font-size: 3rem; }
+            .dropzone-title { font-size: 1rem; }
         }
     </style>
 </head>
@@ -261,6 +702,18 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirm_save'])) {
                         <li>No dejar filas vacías intermedias.</li>
                     </ul>
                 </div>
+            </div>
+            
+            <div class="tips-box">
+                <h4><i class="fas fa-shield-alt"></i> Protecciones Automáticas</h4>
+                <ul>
+                    <li>✅ <strong>Detección automática de delimitador</strong>: Soporta coma (,), punto y coma (;), tabulador</li>
+                    <li>✅ <strong>Limpieza de espacios</strong>: Elimina espacios adicionales y saltos de línea internos</li>
+                    <li>✅ <strong>Columnas vacías</strong>: Ignora columnas extras vacías al final</li>
+                    <li>✅ <strong>Detección de encabezados</strong>: Salta automáticamente la primera fila si contiene títulos</li>
+                    <li>✅ <strong>Validación de duplicados</strong>: Previene cargas repetidas en el mismo archivo</li>
+                    <li>✅ <strong>Normalización automática</strong>: Convierte placas y hostnames a mayúsculas</li>
+                </ul>
             </div>
 
             <button type="submit" name="upload_csv" id="btnUpload" class="btn-primary">
@@ -326,15 +779,25 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirm_save'])) {
             <h3>1. Validación de Datos (<?= count($preview_data) ?> registros)</h3>
             <div class="table-container">
                 <table class="preview-table">
-                    <thead><tr><th>Estado</th><th>Placa</th><th>Serial</th><th>Hostname</th><th>Nota</th></tr></thead>
+                    <thead>
+                        <tr>
+                            <th>Estado</th>
+                            <th>Placa</th>
+                            <th>Serial</th>
+                            <th>Hostname</th>
+                            <th>Nota</th>
+                        </tr>
+                    </thead>
                     <tbody>
                         <?php 
                         $validos = 0; 
                         foreach($preview_data as $row): 
                             if($row['status'] == 'valid') $validos++;
+                            $row_class = 'row-' . $row['status'];
+                            $icon = $row['status'] == 'valid' ? '✅' : ($row['status'] == 'duplicated' ? '⚠️' : '❌');
                         ?>
-                            <tr class="row-<?= $row['status'] ?>">
-                                <td><?= $row['status'] == 'valid' ? '✅' : ($row['status'] == 'duplicated' ? '⚠️' : '❌') ?></td>
+                            <tr class="<?= $row_class ?>">
+                                <td><?= $icon ?></td>
                                 <td><?= htmlspecialchars($row['placa']) ?></td>
                                 <td><?= htmlspecialchars($row['serial']) ?></td>
                                 <td><?= htmlspecialchars($row['hostname']) ?></td>
@@ -349,16 +812,19 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirm_save'])) {
             <div class="form-grid">
                 <div>
                     <label style="font-weight:bold; display:block; margin-bottom:5px;">Sede Destino</label>
-                    <select id="selectSede" required><option value="">-- Seleccionar --</option>
-                    <?php 
-                    $sedes = array_unique(array_column($lugares, 'sede')); 
-                    foreach($sedes as $s) echo "<option value='$s'>$s</option>"; 
-                    ?>
+                    <select id="selectSede" required>
+                        <option value="">-- Seleccionar --</option>
+                        <?php 
+                        $sedes = array_unique(array_column($lugares, 'sede')); 
+                        foreach($sedes as $s) echo "<option value='" . htmlspecialchars($s) . "'>" . htmlspecialchars($s) . "</option>"; 
+                        ?>
                     </select>
                 </div>
                 <div>
                     <label style="font-weight:bold; display:block; margin-bottom:5px;">Ubicación Específica</label>
-                    <select id="selectLugar" name="id_lugar" required disabled><option value="">-- Elija Sede --</option></select>
+                    <select id="selectLugar" name="id_lugar" required disabled>
+                        <option value="">-- Elija Sede --</option>
+                    </select>
                 </div>
                 <div style="grid-column: span 2;">
                     <label style="font-weight:bold; display:block; margin-bottom:5px;">👤 Responsable Principal (LDAP)</label>
@@ -378,7 +844,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirm_save'])) {
                         <input type="text" id="user_id_sec" placeholder="nombre.apellido">
                         <button type="button" onclick="verificarUsuarioOpcional()" style="background:#64748b; color:white; border:none; padding:10px 20px; border-radius:6px; cursor:pointer;">🔍</button>
                     </div>
-                     <div id="userCard_sec" style="margin-top:10px; padding:10px; background:#f1f5f9; border-radius:6px; display:none;">
+                    <div id="userCard_sec" style="margin-top:10px; padding:10px; background:#f1f5f9; border-radius:6px; display:none;">
                         <h4 id="ldap_nombre_sec" style="margin:0; color:#444;"></h4>
                         <div id="ldap_info_sec" style="font-size:0.85rem; color:#666;"></div>
                     </div>
@@ -406,14 +872,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirm_save'])) {
                 </div>
             </div>
 
-            <input type="hidden" name="items_json" value='<?= json_encode($preview_data) ?>'>
+            <input type="hidden" name="items_json" value='<?= htmlspecialchars(json_encode($preview_data), ENT_QUOTES, 'UTF-8') ?>'>
             
-            <div style="display:flex; gap:20px; margin-top:30px;">
-                <a href="asignacion_masiva.php" style="flex:1; text-align:center; padding:15px; background:#64748b; color:white; text-decoration:none; border-radius:8px; font-weight:bold;">CANCELAR</a>
+            <div style="display:flex; gap:20px; margin-top:30px; flex-wrap: wrap;">
+                <a href="asignacion_masiva.php" style="flex:1; min-width: 200px; text-align:center; padding:15px; background:#64748b; color:white; text-decoration:none; border-radius:8px; font-weight:bold;">CANCELAR</a>
                 <?php if ($validos > 0): ?>
-                    <button type="submit" name="confirm_save" id="btnSubmit" style="flex:2; background:var(--primary); color:white; border:none; padding:15px; border-radius:8px; font-weight:bold; cursor:pointer;" disabled>CONFIRMAR (<?= $validos ?> Equipos)</button>
+                    <button type="submit" name="confirm_save" id="btnSubmit" style="flex:2; min-width: 250px; background:var(--primary); color:white; border:none; padding:15px; border-radius:8px; font-weight:bold; cursor:pointer;" disabled>CONFIRMAR (<?= $validos ?> Equipos)</button>
                 <?php else: ?>
-                    <div class="alert error" style="flex:2; margin:0;">No hay equipos válidos</div>
+                    <div class="alert error" style="flex:2; min-width: 250px; margin:0;">No hay equipos válidos</div>
                 <?php endif; ?>
             </div>
         </form>
