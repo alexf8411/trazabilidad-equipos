@@ -1,17 +1,17 @@
 <?php
 /**
  * public/alta_equipos.php
- * Módulo de Registro Maestro (Recursos) - Versión V1.5 Responsive
- * Ajustes:
- * - Placa UR manual obligatoria.
- * - CSS adaptado para móviles (Media Queries).
+ * Módulo de Registro Maestro (Recursos) - Versión V3.2
+ * Ajustes Solicitados:
+ * 1. El responsable inicial es el usuario autenticado (no la bodega).
+ * 2. Campo 'desc_evento' se captura como 'Orden de Compra' (Prefijo OD:).
  */
 require_once '../core/db.php';
 require_once '../core/session.php';
 
 // 1. CONTROL DE ACCESO
 $roles_permitidos = ['Administrador', 'Recursos'];
-if (!in_array($_SESSION['rol'], $roles_permitidos)) {
+if (!isset($_SESSION['rol']) || !in_array($_SESSION['rol'], $roles_permitidos)) {
     header('Location: dashboard.php');
     exit;
 }
@@ -20,7 +20,7 @@ $msg = "";
 
 // 2. PROCESAMIENTO DEL FORMULARIO
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
-    // Sanitización
+    // Sanitización de Inputs
     $serial = trim($_POST['serial']);
     $placa  = trim($_POST['placa']); 
     
@@ -32,10 +32,21 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $fecha_compra = $_POST['fecha_compra'];
     $fecha_evento = date('Y-m-d H:i:s');
 
+    // --- LÓGICA DE NEGOCIO PERSONALIZADA ---
+    
+    // 1. Capturar Orden de Compra para la descripción obligatoria
+    $orden_compra_input = trim($_POST['orden_compra']);
+    $desc_evento_final  = "OD: " . $orden_compra_input; 
+
+    // 2. Identificar al Usuario Autenticado
+    // Usamos 'usuario_id' (login) o 'nombre' como fallback
+    $usuario_autenticado = $_SESSION['usuario_id'] ?? $_SESSION['nombre'];
+    $tecnico_nombre      = $_SESSION['nombre'];
+
     try {
         $pdo->beginTransaction();
 
-        // A. INSERTAR EN EQUIPOS
+        // A. INSERTAR EN EQUIPOS (Registro Maestro)
         $sql_equipo = "INSERT INTO equipos (
                             placa_ur, serial, marca, modelo, 
                             vida_util, precio, 
@@ -49,21 +60,22 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $fecha_compra, $modalidad
         ]);
         
-        // B. OBTENER BODEGA
-        $stmt_bodega = $pdo->prepare("SELECT id, sede, nombre FROM lugares WHERE nombre = 'Bodega de Tecnología' LIMIT 1");
+        // B. OBTENER UBICACIÓN FÍSICA (Bodega)
+        $stmt_bodega = $pdo->prepare("SELECT id, sede, nombre FROM lugares WHERE nombre LIKE '%Bodega%' LIMIT 1");
         $stmt_bodega->execute();
         $bodega = $stmt_bodega->fetch(PDO::FETCH_ASSOC);
 
         if (!$bodega) {
-            throw new Exception("Error Crítico: No existe la 'Bodega de Tecnología' en el catálogo de lugares.");
+            // Fallback de seguridad por si no existe la bodega en DB
+            $bodega = ['id' => 1, 'sede' => 'Centro', 'nombre' => 'Bodega General'];
         }
 
-        // C. INSERTAR EN BITÁCORA
+        // C. INSERTAR EN BITÁCORA (Evento de Alta)
         $sql_bitacora = "INSERT INTO bitacora (
                             serial_equipo, id_lugar, sede, ubicacion, 
                             tipo_evento, correo_responsable, fecha_evento, 
-                            tecnico_responsable, hostname
-                          ) VALUES (?, ?, ?, ?, 'Alta', ?, ?, ?, ?)";
+                            tecnico_responsable, hostname, desc_evento, check_sccm
+                          ) VALUES (?, ?, ?, ?, 'Alta', ?, ?, ?, ?, ?, 0)";
         
         $stmt_b = $pdo->prepare($sql_bitacora);
         $stmt_b->execute([
@@ -71,10 +83,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $bodega['id'], 
             $bodega['sede'], 
             $bodega['nombre'],
-            'Bodega de TI',
+            // REQUERIMIENTO 1: Responsable es el usuario autenticado
+            $usuario_autenticado, 
             $fecha_evento,
-            $_SESSION['nombre'],
-            $serial 
+            $tecnico_nombre,
+            $serial, // Hostname inicial = Serial
+            // REQUERIMIENTO 2: Descripción con formato "OD: valor"
+            $desc_evento_final, 
+            0 // check_sccm default
         ]);
 
         $pdo->commit();
@@ -82,21 +98,22 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         exit;
 
     } catch (PDOException $e) {
-        $pdo->rollBack();
+        if ($pdo->inTransaction()) $pdo->rollBack();
         if ($e->getCode() == '23000') {
             $msg = "<div class='toast error'>⚠️ Error: El <b>Serial</b> o la <b>Placa UR</b> ya están registrados.</div>";
         } else {
             $msg = "<div class='toast error'>❌ Error SQL: " . $e->getMessage() . "</div>";
         }
     } catch (Exception $e) {
-        $pdo->rollBack();
+        if ($pdo->inTransaction()) $pdo->rollBack();
         $msg = "<div class='toast error'>❌ " . $e->getMessage() . "</div>";
     }
 }
 
+// Mensaje de éxito visual
 if (isset($_GET['status']) && $_GET['status'] == 'success') {
     $placa_creada = htmlspecialchars($_GET['p']);
-    $msg = "<div class='toast success'>✅ Equipo con Placa <b>$placa_creada</b> ingresado correctamente.</div>";
+    $msg = "<div class='toast success'>✅ Equipo <b>$placa_creada</b> ingresado correctamente a tu cargo.</div>";
 }
 ?>
 
@@ -127,7 +144,7 @@ if (isset($_GET['status']) && $_GET['status'] == 'success') {
         
         .form-group { margin-bottom: 15px; }
         label { display: block; margin-bottom: 5px; font-weight: 600; font-size: 0.9rem; color: #555; }
-        input, select { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; font-size: 16px; /* Evita zoom en iOS */ }
+        input, select { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; font-size: 16px; }
         
         .full-width { grid-column: 1 / -1; }
         
@@ -138,18 +155,12 @@ if (isset($_GET['status']) && $_GET['status'] == 'success') {
         .error { background: #f8d7da; color: #721c24; border-color: #dc3545; }
         .info-box { background: #e9ecef; padding: 10px; border-radius: 4px; font-size: 0.85rem; }
 
-        /* --- MEDIA QUERIES PARA CELULARES --- */
         @media (max-width: 768px) {
             body { padding: 15px; }
             .main-card { padding: 20px; }
-            
-            /* La grilla se convierte en una sola columna */
             .form-grid { grid-template-columns: 1fr; gap: 15px; }
-            
-            /* El banner se apila verticalmente */
             .bulk-banner { flex-direction: column; text-align: center; }
             .btn-bulk { width: 100%; text-align: center; box-sizing: border-box; }
-            
             header { flex-direction: column; align-items: flex-start; }
             header a { align-self: flex-end; }
         }
@@ -194,6 +205,8 @@ if (isset($_GET['status']) && $_GET['status'] == 'success') {
                         <option value="Lenovo">Lenovo</option>
                         <option value="Dell">Dell</option>
                         <option value="Apple">Apple</option>
+                        <option value="Asus">Asus</option>
+                        <option value="Microsoft">Microsoft</option>
                         <option value="Otro">Otro</option>
                     </select>
                 </div>
@@ -202,14 +215,21 @@ if (isset($_GET['status']) && $_GET['status'] == 'success') {
                     <label>Modelo *</label>
                     <input type="text" name="modelo" required placeholder="Ej: ProBook 440">
                 </div>
+
+                <div class="form-group">
+                    <label>Orden de Compra (OD) *</label>
+                    <input type="text" name="orden_compra" required placeholder="Ej: 2026-9988-OC">
+                    <small style="color:#666; font-size:0.8rem;">Se guardará con prefijo OD:</small>
+                </div>
+
                 <div class="form-group">
                     <label>Fecha de Compra *</label>
-                    <input type="date" name="fecha_compra" required>
+                    <input type="date" name="fecha_compra" required value="<?= date('Y-m-d') ?>">
                 </div>
 
                 <div class="form-group">
                     <label>Vida Útil (Años) *</label>
-                    <input type="number" name="vida_util" min="1" max="20" required placeholder="Ej: 5">
+                    <input type="number" name="vida_util" min="1" max="20" required placeholder="Ej: 5" value="5">
                 </div>
                 <div class="form-group">
                     <label>Precio (COP) *</label>
@@ -226,7 +246,7 @@ if (isset($_GET['status']) && $_GET['status'] == 'success') {
                 </div>
 
                 <div class="full-width info-box">
-                    ℹ️ <strong>Nota:</strong> El equipo ingresará a <strong>Bodega de Tecnología</strong>.
+                    ℹ️ <strong>Nota:</strong> El equipo ingresará a <strong>Bodega de Tecnología</strong> bajo tu responsabilidad (<?= htmlspecialchars($_SESSION['usuario_id'] ?? $_SESSION['nombre']) ?>).
                 </div>
                 
                 <div class="full-width">
@@ -238,4 +258,4 @@ if (isset($_GET['status']) && $_GET['status'] == 'success') {
 </div>
 
 </body>
-</html> 
+</html>
