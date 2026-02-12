@@ -17,7 +17,7 @@ if (isset($_GET['serial'])) {
     
     // DATOS DEL USUARIO QUE CORRIGE (TÚ)
     $nombre_admin = $_SESSION['nombre']; 
-    $correo_admin = $_SESSION['correo_ldap'] ?? 'Bodega de Tecnología'; // Usamos el correo real de la sesión
+    $correo_admin = $_SESSION['usuario_id'] ?? $_SESSION['nombre'] ?? 'Administrador';
 
     try {
         $pdo->beginTransaction();
