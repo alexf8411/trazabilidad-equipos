@@ -36,7 +36,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     
     // 1. Capturar Orden de Compra para la descripción obligatoria
     $orden_compra_input = trim($_POST['orden_compra']);
-    $desc_evento_final  = "OD: " . $orden_compra_input; 
+    $desc_evento_final  = "OC: " . $orden_compra_input; 
 
     // 2. Identificar al Usuario Autenticado
     // Usamos 'usuario_id' (login) o 'nombre' como fallback
@@ -90,7 +90,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $serial, // Hostname inicial = Serial
             // REQUERIMIENTO 2: Descripción con formato "OD: valor"
             $desc_evento_final, 
-            //0 // check_sccm default
         ]);
 
         $pdo->commit();

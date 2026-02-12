@@ -62,8 +62,8 @@ function procesarFila($data, $pdo, $bodega, &$exitos, &$errores_fila, $numero_fi
     $data = limpiarFila($data);
     
     // Validar que tenga al menos 8 columnas con datos
-    if (count($data) < 8) {
-        $errores_fila[] = "Fila $numero_fila: Datos insuficientes (se esperan 8 columnas, se encontraron " . count($data) . ")";
+    if (count($data) < 9) {
+        $errores_fila[] = "Fila $numero_fila: Datos insuficientes (se esperan 9 columnas, se encontraron " . count($data) . ")";
         return;
     }
 
@@ -75,6 +75,7 @@ function procesarFila($data, $pdo, $bodega, &$exitos, &$errores_fila, $numero_fi
     $precio_raw = trim($data[5]);
     $raw_fecha = trim($data[6]);
     $modalidad = trim($data[7]);
+    $orden_compra = trim($data[8]);
     
     // Validaciones básicas
     if (empty($serial)) {
@@ -83,6 +84,10 @@ function procesarFila($data, $pdo, $bodega, &$exitos, &$errores_fila, $numero_fi
     }
     if (empty($placa)) {
         $errores_fila[] = "Fila $numero_fila: Placa vacía";
+        return;
+    }
+    if (empty($orden_compra)) {
+        $errores_fila[] = "Fila $numero_fila: La Orden de Compra es obligatoria";
         return;
     }
     
@@ -138,6 +143,8 @@ function procesarFila($data, $pdo, $bodega, &$exitos, &$errores_fila, $numero_fi
     
     $fecha_compra = ($timestamp && $timestamp > 0) ? date('Y-m-d', $timestamp) : date('Y-m-d');
     $fecha_evento = date('Y-m-d H:i:s');
+    $usuario_responsable = $_SESSION['usuario_id'] ?? $_SESSION['nombre'];
+    $desc_evento_final   = "OC: " . $orden_compra;
 
     try {
         // Verificar duplicado - CORREGIDO: id_equipo en lugar de id
@@ -155,16 +162,23 @@ function procesarFila($data, $pdo, $bodega, &$exitos, &$errores_fila, $numero_fi
         $stmt_eq->execute([$placa, $serial, $marca, $modelo, $vida_util, $precio, $fecha_compra, $modalidad_normalizada]);
         
         // Insertar en bitacora - hostname usa el serial por defecto
-        $stmt_bit = $pdo->prepare("INSERT INTO bitacora (serial_equipo, id_lugar, sede, ubicacion, tipo_evento, correo_responsable, fecha_evento, tecnico_responsable, hostname) VALUES (?, ?, ?, ?, 'Alta', ?, ?, ?, ?)");
+        // CAMBIO: Insertar con la descripción de la Orden de Compra y el usuario real
+        $stmt_bit = $pdo->prepare("INSERT INTO bitacora (
+                                    serial_equipo, id_lugar, sede, ubicacion, 
+                                    tipo_evento, correo_responsable, fecha_evento, 
+                                    tecnico_responsable, hostname, desc_evento
+                                   ) VALUES (?, ?, ?, ?, 'Alta', ?, ?, ?, ?, ?)");
+        
         $stmt_bit->execute([
             $serial, 
             $bodega['id'], 
             $bodega['sede'], 
             $bodega['nombre'], 
-            'Bodega de TI', 
+            $usuario_responsable, // Usuario autenticado
             $fecha_evento, 
             $_SESSION['nombre'], 
-            $serial  // hostname = serial
+            $serial, //hostname = Serial
+            $desc_evento_final    // Valor "OC: 12345"
         ]);
         
         $pdo->commit();
@@ -599,6 +613,7 @@ if (isset($_POST['importar'])) {
                             <th>Precio</th>
                             <th>Fecha Compra</th>
                             <th>Modalidad</th>
+                            <th style="background:#e3f2fd; border-left:2px solid #2196f3;">Orden Compra</th> ```
                         </tr>
                     </thead>
                     <tbody>
@@ -611,6 +626,7 @@ if (isset($_POST['importar'])) {
                             <td>4500000</td>
                             <td>25/10/2023</td>
                             <td>Leasing</td>
+                            <td style="background:#f1f8e9; font-weight:bold;">2026-9988-OC</td> ```
                         </tr>
                     </tbody>
                 </table>
