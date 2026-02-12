@@ -78,7 +78,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         if (!empty($cambios_detectados)) {
             $resumen_cambios = implode(" | ", $cambios_detectados);
             $ip_cliente = $_SERVER['REMOTE_ADDR'];
-            $responsable = $_SESSION['correo_ldap'] ?? 'Admin'; // Ajustado a tu sesión real
+            //$responsable = $_SESSION['correo_ldap'] ?? 'Admin'; // Ajustado a tu sesión real
+            $responsable = $_SESSION['correo'] ?? $_SESSION['usuario_id'] ?? 'Admin_Directo'; // CORRECCIÓN:
 
             $sql_audit = "INSERT INTO auditoria_cambios (usuario_responsable, tipo_accion, referencia, detalles, ip_origen, fecha) 
                           VALUES (?, 'EDICION MAESTRA', ?, ?, ?, NOW())";
