@@ -217,7 +217,7 @@ if (isset($_GET['status']) && $_GET['status'] == 'success') {
                 </div>
 
                 <div class="form-group">
-                    <label>Orden de Compra (OD) *</label>
+                    <label>Orden de Compra *</label>
                     <input type="text" name="orden_compra" required placeholder="Ej: 2026-9988-OC">
                     <small style="color:#666; font-size:0.8rem;">Se guardará con prefijo OD:</small>
                 </div>
