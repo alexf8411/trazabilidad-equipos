@@ -22,7 +22,7 @@ if (isset($_GET['serial'])) {
     try {
         $pdo->beginTransaction();
 
-        // A. Verificar que el equipo realmente esté en Baja
+        // 1. Verificar estado actual
         $stmt_check = $pdo->prepare("SELECT placa_ur, estado_maestro FROM equipos WHERE serial = ?");
         $stmt_check->execute([$serial]);
         $equipo = $stmt_check->fetch();
@@ -31,50 +31,70 @@ if (isset($_GET['serial'])) {
             throw new Exception("El equipo no existe o no está en estado de Baja.");
         }
 
-        // B. Buscar la Bodega de Tecnología (Corrección solicitada)
-        // Buscamos algo que contenga "Tecnología" y "Bodega" para ser precisos
+        // 2. Buscar Bodega de Tecnología
         $stmt_bodega = $pdo->prepare("SELECT id, sede, nombre FROM lugares WHERE nombre LIKE ? LIMIT 1");
         $stmt_bodega->execute(['%Bodega de tecnología%']); 
         $bodega = $stmt_bodega->fetch();
-
-        // Fallback: Si no existe "Bodega de tecnología", buscamos cualquier "Bodega" para no romper el código
-        if (!$bodega) {
+        
+        if (!$bodega) { // Fallback de seguridad
             $stmt_bodega = $pdo->query("SELECT id, sede, nombre FROM lugares WHERE nombre LIKE '%Bodega%' LIMIT 1");
             $bodega = $stmt_bodega->fetch();
         }
+        if (!$bodega) throw new Exception("Error Crítico: No se encontró la Bodega de Tecnología.");
 
-        if (!$bodega) throw new Exception("Error Crítico: No se encontró ninguna Bodega en el sistema.");
-
-        // C. Restaurar Estado Maestro a 'Alta'
+        // 3. Restaurar equipo (UPDATE)
         $stmt_upd = $pdo->prepare("UPDATE equipos SET estado_maestro = 'Alta' WHERE serial = ?");
         $stmt_upd->execute([$serial]);
 
-        // D. Crear evento de 'Ingreso' en Bitácora (CORREGIDO)
+        // =================================================================================
+        // 4. REGISTRO EN AUDITORÍA DE CAMBIOS (TABLA: auditoria_cambios)
+        // =================================================================================
+        $sql_audit = "INSERT INTO auditoria_cambios (
+                        usuario_responsable, 
+                        tipo_accion, 
+                        referencia, 
+                        detalles, 
+                        ip_origen, 
+                        fecha
+                    ) VALUES (?, ?, ?, ?, ?, NOW())";
+        
+        $pdo->prepare($sql_audit)->execute([
+            $correo_admin,                      // usuario_responsable
+            'UPDATE REVERT',                    // tipo_accion
+            "Equipo: $serial",                  // referencia (Serial afectado)
+            "Reversión administrativa de Baja a Alta. Placa: " . $equipo['placa_ur'], // detalles
+            $_SERVER['REMOTE_ADDR']             // ip_origen
+        ]);
+
+        // =================================================================================
+        // 5. REGISTRO EN BITÁCORA (TABLA: bitacora)
+        // =================================================================================
         $sql_bit = "INSERT INTO bitacora (
                         serial_equipo, id_lugar, sede, ubicacion, 
                         tipo_evento, correo_responsable, tecnico_responsable, 
-                        hostname, fecha_evento
-                    ) VALUES (?, ?, ?, ?, 'Ingreso', ?, ?, ?, NOW())";
+                        hostname, fecha_evento, desc_evento
+                    ) VALUES (?, ?, ?, ?, 'Alta', ?, ?, ?, NOW(), ?)";
         
         $pdo->prepare($sql_bit)->execute([
             $serial, 
             $bodega['id'], 
             $bodega['sede'], 
-            $bodega['nombre'],      // Ej: Bodega de tecnología
-            $correo_admin,          // RESPONSABLE: Tu usuario (quien corrige)
-            $nombre_admin,          // TÉCNICO: Tu nombre
-            $serial                 // HOSTNAME: El mismo serial (como pediste)
+            $bodega['nombre'],
+            $correo_admin,      // Responsable
+            $nombre_admin,      // Técnico
+            $serial,            // Hostname
+            'Reversión de baja administrativa por ' . $nombre_admin // desc_evento (OBLIGATORIO)
         ]);
 
         $pdo->commit();
         
-        // Redirigir con mensaje de éxito (Muestra la alerta amarilla en inventario)
+        // Redirigir
         header("Location: inventario.php?status=reverted&p=" . urlencode($equipo['placa_ur']));
         exit;
 
     } catch (Exception $e) {
         if ($pdo->inTransaction()) $pdo->rollBack();
-        die("Error crítico al revertir baja: " . $e->getMessage());
+        die("Error crítico: " . $e->getMessage());
     }
 } else {
     header("Location: inventario.php");

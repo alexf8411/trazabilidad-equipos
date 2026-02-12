@@ -1,11 +1,7 @@
 <?php
 /**
  * public/historial.php
- * Hoja de Vida y Trazabilidad del Activo - Versión V2.5
- * Mejoras: 
- * - Corrección campo 'precio'.
- * - Visualización de Compliance (DLO/AV).
- * - Scroll vertical en historial extenso.
+ * Hoja de Vida y Trazabilidad del Activo - Versión V3.1 (Visual Unificada)
  */
 require_once '../core/db.php';
 require_once '../core/session.php';
@@ -65,7 +61,7 @@ try {
             border-top: 5px solid var(--primary); 
             margin-bottom: 20px; 
             display: grid; 
-            grid-template-columns: repeat(3, 1fr); /* 3 Columnas en escritorio */
+            grid-template-columns: repeat(3, 1fr); 
             gap: 20px; 
         }
         .info-card h2 { grid-column: 1 / -1; margin: 0 0 10px 0; color: var(--primary); font-size: 1.4rem; border-bottom: 1px solid #eee; padding-bottom: 10px; }
@@ -77,9 +73,9 @@ try {
         
         /* CONTENEDOR CON SCROLL PARA LA LÍNEA DE TIEMPO */
         .timeline-container {
-            max-height: 500px; /* Altura máxima antes de hacer scroll */
-            overflow-y: auto;  /* Activa la barra de desplazamiento */
-            padding-right: 10px; /* Espacio para que la barra no tape contenido */
+            max-height: 500px; 
+            overflow-y: auto;  
+            padding-right: 10px; 
             scrollbar-width: thin; 
             scrollbar-color: #cbd5e1 #f4f6f9;
         }
@@ -104,14 +100,16 @@ try {
         .event-details { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 0.9rem; }
         .badge { background: #ebf3ff; color: #004085; padding: 2px 8px; border-radius: 4px; font-weight: bold; font-size: 0.8rem; }
         
-        /* Compliance Badges */
+        /* Compliance Badges - ESTILO UNIFICADO */
         .comp-badge { font-size: 0.75rem; padding: 3px 8px; border-radius: 12px; font-weight: bold; display: inline-flex; align-items: center; gap: 4px; margin-right: 5px; }
-        .comp-ok { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
-        .comp-fail { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; }
+        
+        /* Estilos Semáforo */
+        .comp-ok { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }   /* VERDE */
+        .comp-fail { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; } /* ROJO */
 
         .obs-box { 
             grid-column: 1 / -1; background: #f8fafc; padding: 12px; border-radius: 6px; 
-            border-left: 4px solid #cbd5e1; margin-top: 10px; font-size: 0.85rem;
+            border-left: 4px solid #cbd5e1; margin-top: 10px; font-size: 0.85rem; color: #475569;
         }
 
         @media (max-width: 768px) {
@@ -183,21 +181,31 @@ try {
                         <?php else: ?>
                             <span class="comp-badge comp-fail">⚠️ Sin AV</span>
                         <?php endif; ?>
+
+                        <?php if($ev['check_sccm']): ?>
+                            <span class="comp-badge comp-ok">✅ SCCM OK</span>
+                        <?php else: ?>
+                            <span class="comp-badge comp-fail">⚠️ Sin SCCM</span>
+                        <?php endif; ?>
                     </div>
 
-                    <?php if(!empty($ev['responsable_secundario']) || !empty($ev['campo_adic1']) || !empty($ev['campo_adic2'])): ?>
                     <div class="obs-box">
+                        <strong>📝 Observaciones:</strong><br>
+                        <?= !empty($ev['desc_evento']) ? nl2br(htmlspecialchars($ev['desc_evento'])) : '<em style="color:#999">Sin detalles registrados.</em>' ?>
+                        
                         <?php if(!empty($ev['responsable_secundario'])): ?>
-                            <div><strong>👥 Co-Responsable:</strong> <?= htmlspecialchars($ev['responsable_secundario']) ?></div>
+                            <div style="margin-top:5px; border-top:1px dashed #ccc; padding-top:5px;">
+                                <strong>👥 Co-Responsable:</strong> <?= htmlspecialchars($ev['responsable_secundario']) ?>
+                            </div>
                         <?php endif; ?>
+                        
                         <?php if(!empty($ev['campo_adic1'])): ?>
-                            <div style="margin-top:5px;"><strong>📝 Nota 1:</strong> <?= htmlspecialchars($ev['campo_adic1']) ?></div>
-                        <?php endif; ?>
-                        <?php if(!empty($ev['campo_adic2'])): ?>
-                            <div><strong>📝 Nota 2:</strong> <?= htmlspecialchars($ev['campo_adic2']) ?></div>
+                            <div style="margin-top:5px;">
+                                <strong>ℹ️ Nota Adicional:</strong> <?= htmlspecialchars($ev['campo_adic1']) ?>
+                            </div>
                         <?php endif; ?>
                     </div>
-                    <?php endif; ?>
+                    
                 </div>
             </div>
             <?php endforeach; ?>
