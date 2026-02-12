@@ -90,7 +90,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $serial, // Hostname inicial = Serial
             // REQUERIMIENTO 2: Descripción con formato "OD: valor"
             $desc_evento_final, 
-            0 // check_sccm default
+            //0 // check_sccm default
         ]);
 
         $pdo->commit();
