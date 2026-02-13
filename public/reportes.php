@@ -148,31 +148,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         fclose($output); exit;
     }
 
-    // --- C. REPORTE CONTABLE (Altas y Bajas) ---
-    // CORRECCIÓN SOLICITADA: Se agregó "REALIZADO POR"
-    if (isset($_POST['btn_contable'])) {
-        $inicio = $_POST['f_ini_c'] . ' 00:00:00';
-        $fin    = $_POST['f_fin_c'] . ' 23:59:59';
+    // --- REPORTE DE ALTAS (Compras y Valor Inicial) ---
+if (isset($_POST['btn_altas_compras'])) {
+    $inicio = $_POST['f_ini_a'] . ' 00:00:00';
+    $fin    = $_POST['f_fin_a'] . ' 23:59:59';
 
-        header('Content-Disposition: attachment; filename=Altas_Bajas_' . $_POST['f_ini_c'] . '_a_' . $_POST['f_fin_c'] . '.csv');
-        
-        // Encabezados corregidos
-        fputcsv($output, ['FECHA', 'TIPO MOVIMIENTO', 'PLACA', 'SERIAL', 'MARCA', 'MODELO', 'MODALIDAD', 'REALIZADO POR']);
+    header('Content-Disposition: attachment; filename=Reporte_Altas_URTRACK_' . date('Ymd') . '.csv');
+    fputcsv($output, ['FECHA INGRESO', 'ORDEN DE COMPRA', 'PLACA UR', 'SERIAL', 'EQUIPO', 'MODALIDAD', 'VALOR COMPRA']);
 
-        // Consulta corregida
-        $sql = "SELECT b.fecha_evento, b.tipo_evento, e.placa_ur, b.serial_equipo, 
-                e.marca, e.modelo, e.modalidad, b.tecnico_responsable
-                FROM bitacora b
-                JOIN equipos e ON b.serial_equipo = e.serial
-                WHERE (b.tipo_evento = 'Ingreso' OR b.tipo_evento = 'Baja')
-                AND b.fecha_evento BETWEEN ? AND ?
-                ORDER BY b.fecha_evento DESC";
+    // Unimos bitácora con equipos para traer el precio y la OC
+    $sql = "SELECT b.fecha_evento, b.desc_evento, e.placa_ur, e.serial, 
+                   CONCAT(e.marca, ' ', e.modelo) as equipo, e.modalidad, e.precio
+            FROM bitacora b
+            JOIN equipos e ON b.serial_equipo = e.serial
+            WHERE b.tipo_evento = 'Alta' 
+            AND b.fecha_evento BETWEEN ? AND ?
+            ORDER BY b.fecha_evento DESC";
 
-        $stmt = $pdo->prepare($sql);
-        $stmt->execute([$inicio, $fin]);
-        while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) { fputcsv($output, $row); }
-        fclose($output); exit;
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute([$inicio, $fin]);
+    while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) { 
+        fputcsv($output, $row); 
     }
+    fclose($output); exit;
+}
+
+// --- REPORTE DE BAJAS Y SINIESTRALIDAD ---
+if (isset($_POST['btn_bajas_siniestros'])) {
+    $inicio = $_POST['f_ini_b'] . ' 00:00:00';
+    $fin    = $_POST['f_fin_b'] . ' 23:59:59';
+
+    header('Content-Disposition: attachment; filename=Reporte_Bajas_Siniestros_' . date('Ymd') . '.csv');
+    fputcsv($output, ['FECHA BAJA', 'MOTIVO/DETALLE', 'PLACA UR', 'SERIAL', 'EQUIPO', 'VALOR PERDIDO', 'TECNICO']);
+
+    // Buscamos los eventos de tipo 'Baja'
+    $sql = "SELECT b.fecha_evento, b.desc_evento, e.placa_ur, e.serial, 
+                   CONCAT(e.marca, ' ', e.modelo) as equipo, e.precio, b.tecnico_responsable
+            FROM bitacora b
+            JOIN equipos e ON b.serial_equipo = e.serial
+            WHERE b.tipo_evento = 'Baja' 
+            AND b.fecha_evento BETWEEN ? AND ?
+            ORDER BY b.fecha_evento DESC";
+
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute([$inicio, $fin]);
+    while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) { 
+        fputcsv($output, $row); 
+    }
+    fclose($output); exit;
+}
 }
 
 // 3. RECOLECCIÓN DE DATOS (GRÁFICAS Y KPIs)
@@ -318,16 +342,32 @@ try {
 
         <div class="download-card">
             <div>
-                <h4>📈 Reporte Contable (Altas/Bajas)</h4>
-                <p>Equipos ingresados (Compras) y retirados (Bajas) con responsable del trámite.</p>
+                <h4>📦 Relación de Compras (Altas)</h4>
+                <p>Listado de equipos nuevos, sus costos y el número de Orden de Compra asociada.</p>
             </div>
             <form method="POST">
                 <div class="date-group">
-                    <input type="date" name="f_ini_c" class="date-input" required title="Desde">
-                    <input type="date" name="f_fin_c" class="date-input" required title="Hasta" value="<?= date('Y-m-d') ?>">
+                    <input type="date" name="f_ini_a" class="date-input" required>
+                    <input type="date" name="f_fin_a" class="date-input" required value="<?= date('Y-m-d') ?>">
                 </div>
-                <button type="submit" name="btn_contable" class="btn-dl btn-dl-orange">
-                    📊 Exportar Contable
+                <button type="submit" name="btn_altas_compras" class="btn-dl btn-dl-orange">
+                    📥 Descargar Compras
+                </button>
+            </form>
+        </div>
+
+        <div class="download-card">
+            <div>
+                <h4>⚠️ Bajas y Siniestralidad</h4>
+                <p>Reporte de equipos retirados del inventario por daño, robo o fin de vida útil.</p>
+            </div>
+            <form method="POST">
+                <div class="date-group">
+                    <input type="date" name="f_ini_b" class="date-input" required>
+                    <input type="date" name="f_fin_b" class="date-input" required value="<?= date('Y-m-d') ?>">
+                </div>
+                <button type="submit" name="btn_bajas_siniestros" class="btn-dl" style="background: #dc3545; color: white;">
+                    🚫 Descargar Bajas
                 </button>
             </form>
         </div>
