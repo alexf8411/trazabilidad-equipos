@@ -3,8 +3,12 @@
 require_once '../core/db.php';
 
 try {
-    $pdo = getDB();
-    $db_name = 'trazabilidad_local'; // Nombre de la BD
+    // Ya NO llamamos a getDB(), usamos el $pdo que viene de db.php
+    if (!isset($pdo)) {
+        die("Error: No se encontró la variable de conexión.");
+    }
+    
+    $db_name = 'trazabilidad_local';
 
     echo "<h1>Radiografía de la Base de Datos: URTRACK</h1>";
 

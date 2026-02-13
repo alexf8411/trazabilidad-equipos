@@ -172,19 +172,6 @@ input[type="file"]:hover {
 }
 
 /* BOTONES */
-/* ICONOS DE ACCIÓN (Ojo, Lápiz, etc) */
-.btn-icon {
-    text-decoration: none; /* Elimina la línea azul de subrayado */
-    font-size: 1.2rem;     /* Hace los emojis un poquito más grandes y legibles */
-    margin: 0 4px;         /* Separa los iconos para que no estén pegados */
-    display: inline-block;
-    transition: transform 0.2s; /* Prepara una animación suave */
-}
-
-.btn-icon:hover {
-    transform: scale(1.2); /* Efecto genial: el icono crece un poco al pasar el mouse */
-    text-decoration: none; /* Asegura que la línea tampoco aparezca en hover */
-}
 .btn {
     display: inline-flex;
     align-items: center;
@@ -668,6 +655,210 @@ header h1 {
 @keyframes fadeIn {
     from { opacity: 0; transform: translateY(10px); }
     to { opacity: 1; transform: translateY(0); }
+}
+
+/* ============================================================================
+   ESTILOS ESPECÍFICOS PARA DASHBOARD.PHP
+   ============================================================================ */
+
+/* Welcome card - Tarjeta de bienvenida */
+.welcome-card {
+    background: white;
+    padding: 25px;
+    border-radius: 8px;
+    box-shadow: var(--shadow-md);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 30px;
+    border-left: 5px solid var(--primary-color);
+    animation: fadeIn 0.4s ease;
+}
+
+.user-info h2 {
+    margin: 0 0 5px 0;
+    color: var(--primary-color);
+    font-size: 1.5rem;
+}
+
+.subtitle {
+    color: var(--text-secondary);
+    margin: 0;
+    font-size: 0.95rem;
+}
+
+/* Badges de rol */
+.badge-rol {
+    padding: 5px 12px;
+    border-radius: 20px;
+    color: white;
+    font-weight: bold;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    vertical-align: middle;
+    display: inline-block;
+}
+
+.badge-rol.Administrador {
+    background-color: #6f42c1; /* Morado */
+}
+
+.badge-rol.Recursos {
+    background-color: var(--success); /* Verde */
+}
+
+.badge-rol.Soporte {
+    background-color: var(--info); /* Azul */
+}
+
+.badge-rol.Auditor {
+    background-color: #6c757d; /* Gris */
+}
+
+/* Grid de acciones */
+.actions-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 25px;
+}
+
+/* Tarjetas de acción */
+.action-card {
+    background: white;
+    padding: 25px;
+    border-radius: 10px;
+    text-align: left;
+    border: 1px solid var(--border-color);
+    transition: all 0.3s ease;
+    text-decoration: none;
+    color: var(--text-primary);
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
+    position: relative;
+    overflow: hidden;
+}
+
+.action-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 15px rgba(0, 0, 0, 0.1);
+    border-color: var(--primary-color);
+}
+
+.action-card h3 {
+    color: var(--primary-color);
+    margin: 0 0 10px 0;
+    font-size: 1.2rem;
+}
+
+.action-card p {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    line-height: 1.4;
+}
+
+/* Bordes superiores por tipo de acción */
+.card-consult {
+    border-top: 4px solid var(--info); /* Azul - Inventario */
+}
+
+.card-input {
+    border-top: 4px solid var(--success); /* Verde - Alta */
+}
+
+.card-move {
+    border-top: 4px solid #007bff; /* Azul claro - Movimiento */
+}
+
+.card-report {
+    border-top: 4px solid var(--warning); /* Naranja - Reportes */
+}
+
+.card-admin {
+    border-top: 4px solid #ffc107; /* Amarillo - Admin */
+}
+
+/* Botón de logout */
+.btn-logout {
+    background-color: var(--danger);
+    color: white;
+    text-decoration: none;
+    padding: 10px 20px;
+    border-radius: 5px;
+    font-weight: 600;
+    font-size: 0.9rem;
+    transition: all 0.3s;
+    display: inline-block;
+}
+
+.btn-logout:hover {
+    background-color: #c82333;
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+}
+
+/* Responsive para dashboard */
+@media (max-width: 768px) {
+    .welcome-card {
+        flex-direction: column;
+        text-align: center;
+        gap: 15px;
+    }
+
+    .user-info h2 {
+        font-size: 1.3rem;
+    }
+
+    .subtitle {
+        font-size: 0.85rem;
+    }
+
+    .actions-grid {
+        grid-template-columns: 1fr;
+        gap: 15px;
+    }
+
+    .action-card {
+        padding: 20px;
+    }
+
+    .action-card h3 {
+        font-size: 1.1rem;
+    }
+
+    .action-card p {
+        font-size: 0.85rem;
+    }
+
+    .btn-logout {
+        width: 100%;
+        text-align: center;
+    }
+}
+
+@media (max-width: 480px) {
+    .welcome-card {
+        padding: 20px;
+    }
+
+    .user-info h2 {
+        font-size: 1.1rem;
+    }
+
+    .badge-rol {
+        font-size: 0.7rem;
+        padding: 4px 10px;
+    }
+
+    .action-card {
+        padding: 18px;
+    }
+
+    .action-card h3 {
+        font-size: 1rem;
+    }
 }
 
 /* ============================================================================
