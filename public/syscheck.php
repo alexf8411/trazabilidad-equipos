@@ -1,23 +1,48 @@
 <?php
 /**
  * public/syscheck.php
- * Monitor de Recursos del Servidor (Versión Linux/Ubuntu)
+ * Monitor de Recursos del Servidor (Versión SEGURA)
+ * SOLO Administradores desde IPs permitidas
  */
 require_once '../core/session.php';
 
-// 1. SEGURIDAD
-if ($_SESSION['rol'] !== 'Administrador') {
-    die("Acceso denegado.");
+// 1. VERIFICAR ROL
+if (!isset($_SESSION['rol']) || $_SESSION['rol'] !== 'Administrador') {
+    http_response_code(403);
+    die('Acceso denegado. Solo Administradores.');
 }
 
-// --- LÓGICA DE DIAGNÓSTICO PARA LINUX ---
+// 2. VERIFICAR IP (OPCIONAL - Comentar si no se usa)
+/*
+$allowed_ips = ['192.168.1.0/24', '10.0.0.0/8'];
+$user_ip = $_SERVER['REMOTE_ADDR'];
+$is_allowed = false;
+
+foreach ($allowed_ips as $range) {
+    list($subnet, $bits) = explode('/', $range);
+    $ip_long = ip2long($user_ip);
+    $subnet_long = ip2long($subnet);
+    $mask = -1 << (32 - $bits);
+    if (($ip_long & $mask) == ($subnet_long & $mask)) {
+        $is_allowed = true;
+        break;
+    }
+}
+
+if (!$is_allowed) {
+    http_response_code(403);
+    die('Acceso denegado desde esta IP: ' . $user_ip);
+}
+*/
+
+// --- LÓGICA DE DIAGNÓSTICO ---
 
 // 1. DISCO DURO
 $disco_total = disk_total_space("/");
 $disco_libre = disk_free_space("/");
 $disco_uso_pct = round((($disco_total - $disco_libre) / $disco_total) * 100, 1);
 
-// 2. MEMORIA RAM (Lectura de /proc/meminfo)
+// 2. MEMORIA RAM
 $free = shell_exec('free -b');
 $free = (string)trim($free);
 $free_arr = explode("\n", $free);
@@ -27,10 +52,10 @@ $ram_total = $mem[1];
 $ram_uso = $mem[2];
 $ram_uso_pct = round(($ram_uso / $ram_total) * 100, 1);
 
-// 3. CARGA DE CPU (Lectura de /proc/loadavg)
+// 3. CARGA DE CPU
 $load = sys_getloadavg();
-$cpu_load = $load[0] * 100 / 4; // Asumiendo 4 núcleos, ajuste aproximado
-$cpu_load = round($cpu_load, 1) . "%";
+$cpu_load = round($load[0] * 25, 1); // Ajustado para 4 núcleos
+$cpu_load_str = $cpu_load . "%";
 
 function formatSize($bytes) {
     $units = ['B', 'KB', 'MB', 'GB', 'TB'];
@@ -38,27 +63,69 @@ function formatSize($bytes) {
     return round($bytes, 2) . ' ' . $units[$i];
 }
 ?>
-
 <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>System Check - URTRACK (Linux)</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>System Check - URTRACK</title>
+    <link rel="stylesheet" href="../css/urtrack-styles.css">
     <style>
-        body { font-family: 'Segoe UI', sans-serif; background: #121212; color: #e0e0e0; padding: 40px; }
-        .monitor-card { max-width: 550px; margin: 0 auto; background: #1e1e1e; padding: 30px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); border: 1px solid #333; }
+        body { background: #121212; color: #e0e0e0; padding: 40px; }
+        .monitor-card { 
+            max-width: 550px; 
+            margin: 0 auto; 
+            background: #1e1e1e; 
+            padding: 30px; 
+            border-radius: 12px; 
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5); 
+            border: 1px solid #333; 
+        }
         .stat-row { margin-bottom: 25px; }
-        .label-group { display: flex; justify-content: space-between; margin-bottom: 8px; font-weight: 500; }
-        .progress-bg { background: #333; height: 10px; border-radius: 5px; overflow: hidden; }
-        .progress-bar { height: 100%; transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1); }
+        .label-group { 
+            display: flex; 
+            justify-content: space-between; 
+            margin-bottom: 8px; 
+            font-weight: 500; 
+        }
+        .progress-bg { 
+            background: #333; 
+            height: 10px; 
+            border-radius: 5px; 
+            overflow: hidden; 
+        }
+        .progress-bar { 
+            height: 100%; 
+            transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1); 
+        }
         .bar-blue { background: #0d6efd; }
         .bar-green { background: #198754; }
         .bar-orange { background: #fd7e14; }
         .bar-red { background: #dc3545; }
-        .details { font-size: 0.8rem; color: #888; margin-top: 6px; }
-        .btn { display: block; width: 100%; padding: 12px; border-radius: 6px; text-align: center; text-decoration: none; margin-top: 15px; font-weight: bold; transition: 0.3s; }
-        .btn-refresh { border: 1px solid #0d6efd; color: #0d6efd; }
-        .btn-refresh:hover { background: #0d6efd; color: white; }
+        .details { 
+            font-size: 0.8rem; 
+            color: #888; 
+            margin-top: 6px; 
+        }
+        .btn { 
+            display: block; 
+            width: 100%; 
+            padding: 12px; 
+            border-radius: 6px; 
+            text-align: center; 
+            text-decoration: none; 
+            margin-top: 15px; 
+            font-weight: bold; 
+            transition: 0.3s; 
+        }
+        .btn-refresh { 
+            border: 1px solid #0d6efd; 
+            color: #0d6efd; 
+        }
+        .btn-refresh:hover { 
+            background: #0d6efd; 
+            color: white; 
+        }
     </style>
 </head>
 <body>
@@ -69,8 +136,8 @@ function formatSize($bytes) {
     </h2>
     
     <div class="stat-row">
-        <div class="label-group"><span>Carga CPU</span><span><?= $cpu_load ?></span></div>
-        <div class="progress-bg"><div class="progress-bar bar-blue" style="width: <?= $cpu_load ?>"></div></div>
+        <div class="label-group"><span>Carga CPU</span><span><?= $cpu_load_str ?></span></div>
+        <div class="progress-bg"><div class="progress-bar bar-blue" style="width: <?= $cpu_load ?>%"></div></div>
     </div>
 
     <div class="stat-row">
