@@ -632,19 +632,6 @@ if (isset($_POST['importar'])) {
                 </table>
             </div>
             
-            <!--<div class="tips-box">
-                <h4><i class="fas fa-shield-alt"></i> Protecciones Automáticas</h4>
-                <ul>
-                    <li>✅ <strong>Detección automática de delimitador</strong>: Soporta coma (,), punto y coma (;), tabulador</li>
-                    <li>✅ <strong>Limpieza de espacios</strong>: Elimina espacios adicionales y saltos de línea internos</li>
-                    <li>✅ <strong>Columnas vacías</strong>: Ignora columnas extras vacías al final</li>
-                    <li>✅ <strong>Formatos de precio</strong>: Acepta $4.500.000 / 4500000 / 4,500,000</li>
-                    <li>✅ <strong>Formatos de fecha</strong>: Acepta DD/MM/YYYY, DD-MM-YYYY, YYYY-MM-DD</li>
-                    <li>✅ <strong>Modalidad flexible</strong>: Acepta "leasing", "LEASING", "Leasing"</li>
-                    <li>✅ <strong>Validación de duplicados</strong>: Previene cargas repetidas</li>
-                </ul>
-            </div>-->
-
             <div class="tips-box">
                 <h4><i class="fas fa-shield-alt"></i> Recomendaciones para cargar tu archivo</h4>
                 <ul>
@@ -654,7 +641,6 @@ if (isset($_POST['importar'])) {
                     <li>✅ <strong>Precios y fechas correctos</strong> y bien escritos.</li>
                     <li>✅ <strong>Sin registros repetidos</strong> previamente cargados.</li>
                     <li>✅ <strong>Formato obligatorio</strong>: Guarda el archivo como CSV (.csv).</li>
-                    <li>🔄 <strong>Hostname automático</strong>: Se genera a partir del Serial.</li>
                 </ul>
             </div>
             
