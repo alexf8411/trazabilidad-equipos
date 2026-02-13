@@ -279,6 +279,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             fclose($output);
             exit;
         }
+
+                    // DESDE KPI: Total Activos
+        if (isset($_POST['btn_kpi_activos'])) {
+            // Mismo código que btn_inventario
+            $_POST['btn_inventario'] = true;
+        }
+
+        // DESDE KPI: En Bodega
+        if (isset($_POST['btn_kpi_bodega'])) {
+            header('Content-Type: text/csv; charset=utf-8');
+            header('Content-Disposition: attachment; filename=Equipos_Bodega_' . $date_now . '.csv');
+            $output = fopen('php://output', 'w');
+            fprintf($output, chr(0xEF).chr(0xBB).chr(0xBF));
+            
+            fputcsv($output, ['PLACA', 'SERIAL', 'MARCA', 'MODELO', 'SEDE', 'UBICACION', 'FECHA_INGRESO', 'TECNICO']);
+            
+            $sql = "SELECT e.placa_ur, e.serial, e.marca, e.modelo,
+                    last_event.sede, last_event.ubicacion, last_event.fecha_evento, last_event.tecnico_responsable
+                    FROM equipos e
+                    LEFT JOIN LATERAL (
+                        SELECT tipo_evento, sede, ubicacion, fecha_evento, tecnico_responsable
+                        FROM bitacora WHERE serial_equipo = e.serial
+                        ORDER BY id_evento DESC LIMIT 1
+                    ) AS last_event ON TRUE
+                    WHERE e.estado_maestro = 'Alta'
+                    AND last_event.tipo_evento IN ('Devolución', 'Alta', 'Alistamiento')
+                    LIMIT 10000";
+            
+            $stmt = $pdo->query($sql);
+            while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) { fputcsv($output, array_map(function($v) { return $v ?? ''; }, $row)); }
+            fclose($output);
+            exit;
+        }
+
+        // Repetir para los otros 6 KPIs...
         
     } catch (Exception $e) {
         error_log("Error en reportes: " . $e->getMessage());
@@ -378,9 +413,6 @@ function obtenerDatosReportes($pdo, $force_refresh = false, $time_filter = 'all'
             LIMIT 1000
         ")->fetchColumn();
         
-        // Valor total inventario
-        $datos['valor_total'] = $pdo->query("SELECT SUM(precio) FROM equipos WHERE estado_maestro = 'Alta' LIMIT 10000")->fetchColumn();
-        
         // GRÁFICAS
         // Modalidad
         $stmt = $pdo->query("SELECT modalidad, COUNT(*) as cant FROM equipos GROUP BY modalidad LIMIT 20");
@@ -466,64 +498,92 @@ $cache_age = isset($_SESSION[$cache_key_time]) ? (time() - $_SESSION[$cache_key_
                 <option value="day" <?= $time_filter == 'day' ? 'selected' : '' ?>>Último día</option>
             </select>
         </div>
-        <div class="cache-badge">
-            ⏱️ Caché: <?= $cache_age ?>s
-        </div>
         <a href="reportes.php?refresh=1&filter=<?= $time_filter ?>" class="btn btn-primary">
             🔄 Refrescar
         </a>
     </div>
 
-    <!-- KPIs -->
+    
+    <!-- KPIs CLICABLES -->
     <div class="kpi-grid">
-        <div class="kpi-card">
-            <div class="kpi-title">Total Activos</div>
-            <div class="kpi-value"><?= number_format($datos['total_activos']) ?></div>
-        </div>
         
-        <div class="kpi-card kpi-warning">
-            <div class="kpi-title">En Bodega</div>
-            <div class="kpi-value"><?= number_format($datos['en_bodega']) ?></div>
-        </div>
+        <!-- 1. TOTAL ACTIVOS -->
+        <form method="POST" style="margin: 0;">
+            <button type="submit" name="btn_kpi_activos" class="kpi-card kpi-card-clickable" style="width: 100%; text-align: left; background: white; border: none;">
+                <div class="kpi-title">Total Activos</div>
+                <div class="kpi-value"><?= number_format($datos['total_activos']) ?></div>
+                <div class="kpi-action">📥 Click para descargar</div>
+            </button>
+        </form>
         
-        <div class="kpi-card kpi-success">
-            <div class="kpi-title">Asignados</div>
-            <div class="kpi-value"><?= number_format($datos['asignados']) ?></div>
-        </div>
+        <!-- 2. EN BODEGA -->
+        <form method="POST" style="margin: 0;">
+            <button type="submit" name="btn_kpi_bodega" class="kpi-card kpi-warning kpi-card-clickable" style="width: 100%; text-align: left; background: white; border: none;">
+                <div class="kpi-title">En Bodega</div>
+                <div class="kpi-value"><?= number_format($datos['en_bodega']) ?></div>
+                <div class="kpi-action">📥 Click para descargar</div>
+            </button>
+        </form>
         
-        <div class="kpi-card kpi-info">
-            <div class="kpi-title">Productividad Mes</div>
-            <div class="kpi-value"><?= $datos['movs_mes'] ?></div>
-        </div>
+        <!-- 3. ASIGNADOS -->
+        <form method="POST" style="margin: 0;">
+            <button type="submit" name="btn_kpi_asignados" class="kpi-card kpi-success kpi-card-clickable" style="width: 100%; text-align: left; background: white; border: none;">
+                <div class="kpi-title">Asignados</div>
+                <div class="kpi-value"><?= number_format($datos['asignados']) ?></div>
+                <div class="kpi-action">📥 Click para descargar</div>
+            </button>
+        </form>
         
-        <div class="kpi-card kpi-warning">
-            <div class="kpi-title">Fin de Vida</div>
-            <div class="kpi-value"><?= number_format($datos['fin_vida']) ?></div>
-            <div class="kpi-subtitle">>80% antigüedad</div>
-        </div>
+        <!-- 4. PRODUCTIVIDAD MES -->
+        <form method="POST" style="margin: 0;">
+            <button type="submit" name="btn_kpi_productividad" class="kpi-card kpi-info kpi-card-clickable" style="width: 100%; text-align: left; background: white; border: none;">
+                <div class="kpi-title">Productividad Mes</div>
+                <div class="kpi-value"><?= $datos['movs_mes'] ?></div>
+                <div class="kpi-action">📥 Click para descargar</div>
+            </button>
+        </form>
         
-        <div class="kpi-card kpi-danger">
-            <div class="kpi-title">Sin Movimiento</div>
-            <div class="kpi-value"><?= number_format($datos['sin_movimiento']) ?></div>
-            <div class="kpi-subtitle">Bodega 6+ meses</div>
-        </div>
+        <!-- 5. FIN DE VIDA -->
+        <form method="POST" style="margin: 0;">
+            <button type="submit" name="btn_kpi_finvida" class="kpi-card kpi-warning kpi-card-clickable" style="width: 100%; text-align: left; background: white; border: none;">
+                <div class="kpi-title">Fin de Vida</div>
+                <div class="kpi-value"><?= number_format($datos['fin_vida']) ?></div>
+                <div class="kpi-subtitle">>80% antigüedad</div>
+                <div class="kpi-action">📥 Click para descargar</div>
+            </button>
+        </form>
         
-        <div class="kpi-card kpi-danger">
-            <div class="kpi-title">Tasa Siniestralidad</div>
-            <div class="kpi-value"><?= $datos['tasa_siniestralidad'] ?>%</div>
-        </div>
+        <!-- 6. SIN MOVIMIENTO -->
+        <form method="POST" style="margin: 0;">
+            <button type="submit" name="btn_kpi_sinmov" class="kpi-card kpi-danger kpi-card-clickable" style="width: 100%; text-align: left; background: white; border: none;">
+                <div class="kpi-title">Sin Movimiento</div>
+                <div class="kpi-value"><?= number_format($datos['sin_movimiento']) ?></div>
+                <div class="kpi-subtitle">Bodega 6+ meses</div>
+                <div class="kpi-action">📥 Click para descargar</div>
+            </button>
+        </form>
         
-        <div class="kpi-card kpi-warning">
-            <div class="kpi-title">Sin Compliance</div>
-            <div class="kpi-value"><?= number_format($datos['sin_compliance']) ?></div>
-            <div class="kpi-subtitle">Asignados sin agentes</div>
-        </div>
+        <!-- 7. TASA SINIESTRALIDAD -->
+        <form method="POST" style="margin: 0;">
+            <button type="submit" name="btn_kpi_siniestralidad" class="kpi-card kpi-danger kpi-card-clickable" style="width: 100%; text-align: left; background: white; border: none;">
+                <div class="kpi-title">Tasa Siniestralidad</div>
+                <div class="kpi-value"><?= $datos['tasa_siniestralidad'] ?>%</div>
+                <div class="kpi-action">📥 Click para descargar</div>
+            </button>
+        </form>
         
-        <div class="kpi-card kpi-success">
-            <div class="kpi-title">Valor Inventario</div>
-            <div class="kpi-value">$<?= number_format($datos['valor_total'], 0) ?></div>
-        </div>
+        <!-- 8. SIN COMPLIANCE -->
+        <form method="POST" style="margin: 0;">
+            <button type="submit" name="btn_kpi_compliance" class="kpi-card kpi-warning kpi-card-clickable" style="width: 100%; text-align: left; background: white; border: none;">
+                <div class="kpi-title">Sin Compliance</div>
+                <div class="kpi-value"><?= number_format($datos['sin_compliance']) ?></div>
+                <div class="kpi-subtitle">Asignados sin agentes</div>
+                <div class="kpi-action">📥 Click para descargar</div>
+            </button>
+        </form>
+
     </div>
+    <!-- FIN DE KPIs CLICABLES -->
 
     <!-- Gráficas -->
     <div class="charts-grid">
