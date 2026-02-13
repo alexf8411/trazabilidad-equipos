@@ -656,3 +656,126 @@ header h1 {
     from { opacity: 0; transform: translateY(10px); }
     to { opacity: 1; transform: translateY(0); }
 }
+
+/* ============================================================================
+   ESTILOS ESPECÍFICOS PARA BAJA_EQUIPOS.PHP
+   ============================================================================ */
+
+/* Card de baja con borde rojo */
+.baja-card {
+    background: var(--bg-card);
+    padding: 30px;
+    border-radius: 8px;
+    box-shadow: var(--shadow-md);
+    border-top: 5px solid var(--danger);
+}
+
+/* Header de página de baja */
+.baja-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.baja-header h1 {
+    color: var(--danger);
+    margin: 0;
+    font-size: 1.5rem;
+}
+
+/* Textarea para seriales */
+textarea {
+    width: 100%;
+    height: 150px;
+    padding: 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    font-family: 'Courier New', monospace;
+    resize: vertical;
+    font-size: 0.9rem;
+    transition: all 0.3s;
+}
+
+textarea:focus {
+    outline: none;
+    border-color: var(--danger);
+    box-shadow: 0 0 0 3px rgba(220, 53, 69, 0.1);
+}
+
+/* Hint/ayuda */
+.hint {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin-top: 5px;
+    display: block;
+}
+
+/* Botón de baja (rojo) */
+.btn-danger-submit {
+    background: var(--danger);
+    color: white;
+    width: 100%;
+    padding: 15px;
+    border: none;
+    border-radius: 6px;
+    font-weight: bold;
+    cursor: pointer;
+    font-size: 1.1rem;
+    margin-top: 10px;
+    transition: all 0.3s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+.btn-danger-submit:hover {
+    background: #b02a37;
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+}
+
+.btn-danger-submit:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+}
+
+/* Responsive para baja_equipos */
+@media (max-width: 768px) {
+    .baja-card {
+        padding: 20px;
+    }
+    
+    .baja-header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    
+    .baja-header h1 {
+        font-size: 1.2rem;
+    }
+    
+    textarea {
+        height: 120px;
+        font-size: 0.85rem;
+    }
+    
+    .btn-danger-submit {
+        padding: 12px;
+        font-size: 1rem;
+    }
+}
+
+@media (max-width: 480px) {
+    .baja-card {
+        padding: 15px;
+    }
+    
+    .baja-header h1 {
+        font-size: 1.1rem;
+    }
+}
