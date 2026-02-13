@@ -266,19 +266,22 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['upload_csv'])) {
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirm_save'])) {
     try {
         $items = json_decode($_POST['items_json'], true);
-        if (json_last_error() !== JSON_ERROR_NONE) throw new Exception("Datos inválidos");
+        if (json_last_error() !== JSON_ERROR_NONE) throw new Exception("Datos del CSV inválidos o corruptos al enviar.");
+        
         $stmt_l = $pdo->prepare("SELECT sede, nombre FROM lugares WHERE id = ?");
         $stmt_l->execute([$_POST['id_lugar']]);
         $l = $stmt_l->fetch();
-        if (!$l) throw new Exception("Ubicación inválida");
+        if (!$l) throw new Exception("La ubicación seleccionada es inválida.");
         
         // Obtener No. de Caso
         $no_caso = trim($_POST['no_caso']);
-        if (empty($no_caso)) throw new Exception("Falta No. de Caso");
+        if (empty($no_caso)) throw new Exception("Falta el No. de Caso.");
         $desc_evento = "Caso: " . $no_caso;
         
         $pdo->beginTransaction();
         $serials_procesados = [];
+        
+        // CÓDIGO RESTAURADO SEGÚN TU ESTRUCTURA REAL
         $sql = "INSERT INTO bitacora (
             serial_equipo, id_lugar, sede, ubicacion,
             campo_adic1, desc_evento, tipo_evento,
@@ -286,34 +289,59 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirm_save'])) {
             tecnico_responsable, hostname, fecha_evento,
             check_dlo, check_antivirus, check_sccm
         ) VALUES (?, ?, ?, ?, ?, ?, 'Asignacion_Masiva', ?, ?, ?, ?, NOW(), ?, ?, ?)";
+        
         $stmt = $pdo->prepare($sql);
+        
         $dlo = isset($_POST['check_dlo']) ? 1 : 0;
         $av = isset($_POST['check_antivirus']) ? 1 : 0;
         $sccm = isset($_POST['check_sccm']) ? 1 : 0;
+        
         foreach ($items as $item) {
             if ($item['status'] !== 'valid') continue;
+            
+            // Verificación extra: Asegurarnos de que el serial no esté vacío antes de insertar
+            if (empty($item['serial'])) {
+                 throw new Exception("El equipo con placa " . $item['placa'] . " no tiene un serial válido asociado en la base de datos.");
+            }
+
             $stmt->execute([
-                $item['serial'], $_POST['id_lugar'], $l['sede'], $l['nombre'],
-                $item['comentarios'], $desc_evento,
-                $_POST['correo_resp_real'], $_POST['correo_sec_real'] ?: null,
-                $_SESSION['nombre'], strtoupper($item['hostname']),
-                $dlo, $av, $sccm
+                $item['serial'], 
+                $_POST['id_lugar'], 
+                $l['sede'], 
+                $l['nombre'],
+                $item['comentarios'], 
+                $desc_evento,
+                $_POST['correo_resp_real'], 
+                $_POST['correo_sec_real'] ?: null,
+                $_SESSION['nombre'], 
+                strtoupper($item['hostname']),
+                $dlo, 
+                $av, 
+                $sccm
             ]);
             $serials_procesados[] = $item['serial'];
         }
+        
         $pdo->commit();
+        
         if (count($serials_procesados) > 0) {
             header("Location: generar_acta_masiva.php?serials=" . urlencode(implode(',', $serials_procesados)));
             exit;
         } else {
-            $msg = "<div class='alert alert-error'>⚠️ Sin equipos procesados</div>";
+            $msg = "<div class='alert alert-error'>⚠️ No se procesó ningún equipo. Revisa que estén en estado 'valid'.</div>";
             $step = 1;
         }
+    } catch (PDOException $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        // ESTE MENSAJE ES CLAVE: Te mostrará si es un error de Foreign Key u otra cosa de MySQL
+        error_log("Error SQL en asignación masiva: " . $e->getMessage());
+        $msg = "<div class='alert alert-error'>❌ Error de Base de Datos: " . htmlspecialchars($e->getMessage()) . "</div>";
+        $step = 2; // Mantener en el paso 2 para ver el error
     } catch (Exception $e) {
         if ($pdo->inTransaction()) $pdo->rollBack();
-        error_log("Error asignación masiva: " . $e->getMessage());
+        error_log("Error de lógica en asignación masiva: " . $e->getMessage());
         $msg = "<div class='alert alert-error'>❌ Error: " . htmlspecialchars($e->getMessage()) . "</div>";
-        $step = 2;
+        $step = 2; // Mantener en el paso 2 para ver el error
     }
 }
 ?>
