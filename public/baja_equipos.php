@@ -29,7 +29,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['seriales_raw'])) {
     $tecnico = $_SESSION['nombre'];
     
     // Combinar para el campo desc_evento
-    $desc_evento_completo = $motivo_baja . " | " . $justificacion;
+    $desc_evento_completo = "Motivo Baja: " . trim($motivo_baja);
     
     // Procesar seriales
     $raw_data = $_POST['seriales_raw'];

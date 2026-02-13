@@ -658,6 +658,311 @@ header h1 {
 }
 
 /* ============================================================================
+   ESTILOS ESPECÍFICOS PARA REGISTRO_MOVIMIENTO.PHP
+   ============================================================================ */
+
+/* Sección de búsqueda */
+.search-section {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 30px;
+    background: #f1f5f9;
+    padding: 20px;
+    border-radius: 8px;
+}
+
+.search-section input[type="text"] {
+    flex: 1;
+}
+
+.search-section button {
+    background: var(--primary-color);
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: bold;
+    white-space: nowrap;
+    transition: background 0.3s;
+}
+
+.search-section button:hover {
+    background: var(--secondary-color);
+}
+
+/* Info pill - Información del equipo */
+.info-pill {
+    background: #f8fafc;
+    padding: 20px;
+    border-radius: 8px;
+    margin-bottom: 25px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 15px;
+    border-left: 5px solid var(--primary-color);
+}
+
+.label-sm {
+    display: block;
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    font-weight: 700;
+    margin-bottom: 5px;
+}
+
+.data-val {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #1e293b;
+}
+
+/* Current status box */
+.current-status-box {
+    grid-column: span 2;
+    background: #fff7ed;
+    border: 1px solid #fed7aa;
+    padding: 15px;
+    border-radius: 6px;
+    margin-top: 10px;
+}
+
+.current-status-box > div {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 15px;
+}
+
+/* LDAP Group */
+.ldap-group {
+    background: #fcfcfc;
+    border: 1px solid #eee;
+    padding: 20px;
+    border-radius: 8px;
+    margin-top: 15px;
+}
+
+.ldap-group .label-sm {
+    margin-bottom: 10px;
+}
+
+.ldap-group > div[style*="display:flex"] {
+    display: flex;
+    gap: 10px;
+}
+
+.ldap-group button {
+    white-space: nowrap;
+    background: var(--primary-color);
+    color: white;
+    border: none;
+    padding: 0 15px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: background 0.3s;
+}
+
+.ldap-group button:hover {
+    background: var(--secondary-color);
+}
+
+/* User card (LDAP) */
+.user-card {
+    background: #fff;
+    border: 2px solid var(--primary-color);
+    padding: 15px;
+    border-radius: 8px;
+    margin-top: 15px;
+    display: none;
+}
+
+.user-card h4 {
+    margin: 0 0 8px 0;
+    color: var(--primary-color);
+}
+
+.user-card.show {
+    display: block;
+    animation: fadeIn 0.3s ease;
+}
+
+/* COMPLIANCE SECTION - Switches */
+.compliance-section {
+    grid-column: span 2;
+    display: flex;
+    gap: 20px;
+    background: #f0fdf4;
+    border: 1px solid #bbf7d0;
+    padding: 15px;
+    border-radius: 8px;
+    align-items: center;
+    justify-content: space-around;
+    flex-wrap: wrap;
+}
+
+.compliance-section > span:first-child {
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    color: #166534;
+    font-weight: bold;
+    flex-basis: 100%;
+    text-align: center;
+    margin-bottom: 5px;
+}
+
+.switch-container {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+/* Toggle Switch */
+.switch {
+    position: relative;
+    display: inline-block;
+    width: 50px;
+    height: 26px;
+}
+
+.switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #dc3545;
+    transition: 0.4s;
+    border-radius: 34px;
+}
+
+.slider:before {
+    position: absolute;
+    content: "";
+    height: 20px;
+    width: 20px;
+    left: 3px;
+    bottom: 3px;
+    background-color: white;
+    transition: 0.4s;
+    border-radius: 50%;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+.switch input:checked + .slider {
+    background-color: var(--success);
+}
+
+.switch input:focus + .slider {
+    box-shadow: 0 0 1px var(--success);
+}
+
+.switch input:checked + .slider:before {
+    transform: translateX(24px);
+}
+
+.switch-label {
+    font-weight: bold;
+    color: #166534;
+    font-size: 0.9rem;
+}
+
+/* Grid de formulario */
+.form-grid-2col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+}
+
+/* Botón submit deshabilitado */
+.btn-submit-disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.btn-submit-enabled {
+    opacity: 1;
+    cursor: pointer;
+    background: var(--success);
+    transition: all 0.3s;
+}
+
+.btn-submit-enabled:hover {
+    background: #16a34a;
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+}
+
+/* Responsive para registro_movimiento */
+@media (max-width: 768px) {
+    .search-section {
+        flex-direction: column;
+        padding: 15px;
+    }
+
+    .search-section button {
+        width: 100%;
+    }
+
+    .info-pill {
+        grid-template-columns: 1fr;
+        padding: 15px;
+    }
+
+    .current-status-box > div {
+        grid-template-columns: 1fr;
+    }
+
+    .form-grid-2col {
+        grid-template-columns: 1fr;
+    }
+
+    .compliance-section {
+        flex-direction: column;
+        gap: 15px;
+    }
+
+    .compliance-section > span:first-child {
+        flex-basis: auto;
+    }
+
+    .ldap-group > div[style*="display:flex"] {
+        flex-direction: column;
+    }
+
+    .ldap-group button {
+        width: 100%;
+    }
+}
+
+@media (max-width: 480px) {
+    .info-pill {
+        padding: 12px;
+    }
+
+    .label-sm {
+        font-size: 0.65rem;
+    }
+
+    .data-val {
+        font-size: 0.85rem;
+    }
+
+    .switch-container {
+        width: 100%;
+        justify-content: space-between;
+    }
+}
+
+/* ============================================================================
    ESTILOS ESPECÍFICOS PARA BAJA_EQUIPOS.PHP
    ============================================================================ */
 
