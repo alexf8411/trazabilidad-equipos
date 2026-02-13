@@ -319,56 +319,6 @@ function initTooltips() {
 }
 
 // ============================================================================
-// AUTO-MAYÚSCULAS EN INPUTS
-// ============================================================================
-
-function initAutoUppercase() {
-    const upperInputs = document.querySelectorAll('[data-uppercase]');
-    
-    upperInputs.forEach(input => {
-        input.addEventListener('input', function() {
-            const cursorPos = this.selectionStart;
-            this.value = this.value.toUpperCase();
-            this.setSelectionRange(cursorPos, cursorPos);
-        });
-    });
-}
-
-// ============================================================================
-// FORMATEO DE NÚMEROS
-// ============================================================================
-
-function initNumberFormatting() {
-    const priceInputs = document.querySelectorAll('input[type="number"][name="precio"]');
-    
-    priceInputs.forEach(input => {
-        input.addEventListener('blur', function() {
-            if (this.value) {
-                const valor = parseFloat(this.value);
-                if (!isNaN(valor) && valor > 0) {
-                    const formatted = new Intl.NumberFormat('es-CO', {
-                        style: 'currency',
-                        currency: 'COP',
-                        minimumFractionDigits: 0
-                    }).format(valor);
-                    
-                    // Mostrar hint con formato
-                    let hint = this.parentNode.querySelector('.price-hint');
-                    if (!hint) {
-                        hint = document.createElement('small');
-                        hint.className = 'price-hint text-muted';
-                        hint.style.display = 'block';
-                        hint.style.marginTop = '4px';
-                        this.parentNode.appendChild(hint);
-                    }
-                    hint.textContent = 'Valor: ' + formatted;
-                }
-            }
-        });
-    });
-}
-
-// ============================================================================
 // INICIALIZACIÓN AL CARGAR LA PÁGINA
 // ============================================================================
 
@@ -383,8 +333,6 @@ document.addEventListener('DOMContentLoaded', function() {
     initAutoCloseAlerts();
     initLoadingButtons();
     initTooltips();
-    initAutoUppercase();
-    initNumberFormatting();
 
     console.log('✅ URTRACK System cargado correctamente');
 });

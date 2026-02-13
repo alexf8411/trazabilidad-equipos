@@ -1,8 +1,12 @@
 /**
- * public/css/alta_equipos.css
- * Estilos específicos para el módulo de Registro Maestro (Alta de Equipos)
+ * css/alta_equipos.css
+ * Estilos específicos para el módulo de Alta de Equipos
+ * Mantiene el diseño visual original exacto
  */
 
+/* ========================================================================
+   VARIABLES Y ESTILOS BASE
+   ======================================================================== */
 :root { 
     --primary: #002D72; 
     --accent: #28a745; 
@@ -18,6 +22,9 @@ body {
     margin: 0; 
 }
 
+/* ========================================================================
+   CONTENEDOR PRINCIPAL
+   ======================================================================== */
 .container { 
     max-width: 850px; 
     margin: 0 auto; 
@@ -31,6 +38,9 @@ body {
     box-shadow: 0 4px 15px rgba(0,0,0,0.05); 
 }
 
+/* ========================================================================
+   HEADER
+   ======================================================================== */
 header { 
     border-bottom: 2px solid var(--primary); 
     padding-bottom: 15px; 
@@ -48,6 +58,9 @@ h1 {
     font-size: 1.5rem; 
 }
 
+/* ========================================================================
+   BANNER DE IMPORTACIÓN MASIVA
+   ======================================================================== */
 .bulk-banner { 
     background: #e7f1ff; 
     border: 1px solid #b6d4fe; 
@@ -75,6 +88,9 @@ h1 {
     background: #0b5ed7; 
 }
 
+/* ========================================================================
+   FORMULARIO - GRID Y CAMPOS
+   ======================================================================== */
 .form-grid { 
     display: grid; 
     grid-template-columns: 1fr 1fr; 
@@ -102,10 +118,19 @@ input, select {
     font-size: 16px; 
 }
 
+input:focus, select:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(0, 45, 114, 0.1);
+}
+
 .full-width { 
     grid-column: 1 / -1; 
 }
 
+/* ========================================================================
+   BOTÓN DE SUBMIT
+   ======================================================================== */
 .btn-submit { 
     background: var(--primary); 
     color: white; 
@@ -117,13 +142,32 @@ input, select {
     font-weight: bold; 
     cursor: pointer; 
     margin-top: 10px; 
+    transition: background 0.3s;
 }
 
+.btn-submit:hover {
+    background: #001f52;
+}
+
+.btn-submit:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* ========================================================================
+   ALERTAS / TOASTS
+   ======================================================================== */
 .toast { 
     padding: 15px; 
     border-radius: 4px; 
     margin-bottom: 20px; 
     border-left: 5px solid; 
+    animation: slideIn 0.3s ease;
+}
+
+@keyframes slideIn {
+    from { opacity: 0; transform: translateX(-20px); }
+    to { opacity: 1; transform: translateX(0); }
 }
 
 .success { 
@@ -138,6 +182,9 @@ input, select {
     border-color: #dc3545; 
 }
 
+/* ========================================================================
+   INFO BOX
+   ======================================================================== */
 .info-box { 
     background: #e9ecef; 
     padding: 10px; 
@@ -145,13 +192,80 @@ input, select {
     font-size: 0.85rem; 
 }
 
-/* Responsividad */
+/* ========================================================================
+   RESPONSIVE - TABLET (max-width: 768px)
+   ======================================================================== */
 @media (max-width: 768px) {
-    body { padding: 15px; }
-    .main-card { padding: 20px; }
-    .form-grid { grid-template-columns: 1fr; gap: 15px; }
-    .bulk-banner { flex-direction: column; text-align: center; }
-    .btn-bulk { width: 100%; text-align: center; box-sizing: border-box; }
-    header { flex-direction: column; align-items: flex-start; }
-    header a { align-self: flex-end; }
+    body { 
+        padding: 15px; 
+    }
+    
+    .main-card { 
+        padding: 20px; 
+    }
+    
+    .form-grid { 
+        grid-template-columns: 1fr; 
+        gap: 15px; 
+    }
+    
+    .bulk-banner { 
+        flex-direction: column; 
+        text-align: center; 
+    }
+    
+    .btn-bulk { 
+        width: 100%; 
+        text-align: center; 
+        box-sizing: border-box; 
+    }
+    
+    header { 
+        flex-direction: column; 
+        align-items: flex-start; 
+    }
+    
+    header a { 
+        align-self: flex-end; 
+    }
+}
+
+/* ========================================================================
+   RESPONSIVE - MOBILE (max-width: 480px)
+   ======================================================================== */
+@media (max-width: 480px) {
+    body {
+        padding: 10px;
+    }
+    
+    .main-card {
+        padding: 15px;
+    }
+    
+    h1 {
+        font-size: 1.2rem;
+    }
+    
+    .bulk-banner {
+        padding: 12px;
+    }
+    
+    .btn-bulk {
+        padding: 8px 16px;
+        font-size: 0.85rem;
+    }
+    
+    input, select {
+        font-size: 14px;
+        padding: 8px;
+    }
+    
+    .btn-submit {
+        padding: 10px;
+        font-size: 0.95rem;
+    }
+    
+    label {
+        font-size: 0.85rem;
+    }
 }
