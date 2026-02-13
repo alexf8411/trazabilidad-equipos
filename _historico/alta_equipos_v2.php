@@ -1,12 +1,10 @@
 <?php
 /**
  * public/alta_equipos.php
- * Módulo de Registro Maestro (Recursos) - Versión V3.3
- * Ajustes Aplicados:
- * 1. El responsable inicial es el usuario autenticado.
- * 2. Campo 'desc_evento' se captura como 'Orden de Compra' (Prefijo OC:).
- * 3. FIX: Redirección obligatoria a "Bodega de Tecnología".
- * 4. Arquitectura limpia separando CSS y JS en archivos descriptivos.
+ * Módulo de Registro Maestro (Recursos) - Versión V3.2
+ * Ajustes Solicitados:
+ * 1. El responsable inicial es el usuario autenticado (no la bodega).
+ * 2. Campo 'desc_evento' se captura como 'Orden de Compra' (Prefijo OD:).
  */
 require_once '../core/db.php';
 require_once '../core/session.php';
@@ -22,9 +20,9 @@ $msg = "";
 
 // 2. PROCESAMIENTO DEL FORMULARIO
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
-    // Sanitización y formateo de Inputs
-    $serial = strtoupper(trim($_POST['serial'])); // Forzamos mayúsculas
-    $placa  = strtoupper(trim($_POST['placa']));  // Forzamos mayúsculas
+    // Sanitización de Inputs
+    $serial = trim($_POST['serial']);
+    $placa  = trim($_POST['placa']); 
     
     $marca = trim($_POST['marca']);
     $modelo = trim($_POST['modelo']);
@@ -41,6 +39,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $desc_evento_final  = "OC: " . $orden_compra_input; 
 
     // 2. Identificar al Usuario Autenticado
+    // Usamos 'usuario_id' (login) o 'nombre' como fallback
     $usuario_autenticado = $_SESSION['usuario_id'] ?? $_SESSION['nombre'];
     $tecnico_nombre      = $_SESSION['nombre'];
 
@@ -61,19 +60,17 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $fecha_compra, $modalidad
         ]);
         
-        // B. OBTENER UBICACIÓN FÍSICA ESTRICTA (Bodega de Tecnología)
-        // FIX: Evitamos el LIKE genérico y buscamos específicamente por palabras clave de la bodega principal.
-        $sql_bodega = "SELECT id, sede, nombre FROM lugares WHERE nombre LIKE '%Bodega%Tecnolog%' LIMIT 1";
-        $stmt_bodega = $pdo->prepare($sql_bodega);
+        // B. OBTENER UBICACIÓN FÍSICA (Bodega)
+        $stmt_bodega = $pdo->prepare("SELECT id, sede, nombre FROM lugares WHERE nombre LIKE '%Bodega%' LIMIT 1");
         $stmt_bodega->execute();
         $bodega = $stmt_bodega->fetch(PDO::FETCH_ASSOC);
 
-        // Fallback de seguridad por si la tabla lugares está vacía o el nombre es diferente
         if (!$bodega) {
-            $bodega = ['id' => 1, 'sede' => 'Centro', 'nombre' => 'Bodega de Tecnología'];
+            // Fallback de seguridad por si no existe la bodega en DB
+            $bodega = ['id' => 1, 'sede' => 'Centro', 'nombre' => 'Bodega General'];
         }
 
-        // C. INSERTAR EN BITÁCORA (Evento de Alta atómico)
+        // C. INSERTAR EN BITÁCORA (Evento de Alta)
         $sql_bitacora = "INSERT INTO bitacora (
                             serial_equipo, id_lugar, sede, ubicacion, 
                             tipo_evento, correo_responsable, fecha_evento, 
@@ -86,10 +83,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $bodega['id'], 
             $bodega['sede'], 
             $bodega['nombre'],
+            // REQUERIMIENTO 1: Responsable es el usuario autenticado
             $usuario_autenticado, 
             $fecha_evento,
             $tecnico_nombre,
             $serial, // Hostname inicial = Serial
+            // REQUERIMIENTO 2: Descripción con formato "OD: valor"
             $desc_evento_final, 
         ]);
 
@@ -100,7 +99,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     } catch (PDOException $e) {
         if ($pdo->inTransaction()) $pdo->rollBack();
         if ($e->getCode() == '23000') {
-            $msg = "<div class='toast error'>⚠️ Error: El <b>Serial</b> o la <b>Placa UR</b> ya están registrados en el sistema.</div>";
+            $msg = "<div class='toast error'>⚠️ Error: El <b>Serial</b> o la <b>Placa UR</b> ya están registrados.</div>";
         } else {
             $msg = "<div class='toast error'>❌ Error SQL: " . $e->getMessage() . "</div>";
         }
@@ -113,7 +112,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 // Mensaje de éxito visual
 if (isset($_GET['status']) && $_GET['status'] == 'success') {
     $placa_creada = htmlspecialchars($_GET['p']);
-    $msg = "<div class='toast success'>✅ Equipo <b>$placa_creada</b> ingresado correctamente a la Bodega de Tecnología.</div>";
+    $msg = "<div class='toast success'>✅ Equipo <b>$placa_creada</b> ingresado correctamente a tu cargo.</div>";
 }
 ?>
 
@@ -123,7 +122,48 @@ if (isset($_GET['status']) && $_GET['status'] == 'success') {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Alta de Equipos - URTRACK</title>
-    <link rel="stylesheet" href="../css/alta_equipos.css">
+    <style>
+        :root { --primary: #002D72; --accent: #28a745; --bg: #f0f2f5; --white: #fff; }
+        body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); padding: 20px; color: #333; margin: 0; }
+        
+        .container { max-width: 850px; margin: 0 auto; width: 100%; }
+        
+        .main-card { background: var(--white); padding: 30px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }
+        
+        header { border-bottom: 2px solid var(--primary); padding-bottom: 15px; margin-bottom: 25px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
+        
+        h1 { margin: 0; color: var(--primary); font-size: 1.5rem; }
+        
+        .bulk-banner { background: #e7f1ff; border: 1px solid #b6d4fe; padding: 15px; border-radius: 8px; margin-bottom: 25px; display: flex; justify-content: space-between; align-items: center; gap: 15px; }
+        
+        .btn-bulk { background: #0d6efd; color: white; text-decoration: none; padding: 10px 20px; border-radius: 5px; font-weight: bold; font-size: 0.9rem; white-space: nowrap; }
+        .btn-bulk:hover { background: #0b5ed7; }
+        
+        .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-weight: 600; font-size: 0.9rem; color: #555; }
+        input, select { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; font-size: 16px; }
+        
+        .full-width { grid-column: 1 / -1; }
+        
+        .btn-submit { background: var(--primary); color: white; width: 100%; padding: 12px; border: none; border-radius: 4px; font-size: 1rem; font-weight: bold; cursor: pointer; margin-top: 10px; }
+        
+        .toast { padding: 15px; border-radius: 4px; margin-bottom: 20px; border-left: 5px solid; }
+        .success { background: #d4edda; color: #155724; border-color: #28a745; }
+        .error { background: #f8d7da; color: #721c24; border-color: #dc3545; }
+        .info-box { background: #e9ecef; padding: 10px; border-radius: 4px; font-size: 0.85rem; }
+
+        @media (max-width: 768px) {
+            body { padding: 15px; }
+            .main-card { padding: 20px; }
+            .form-grid { grid-template-columns: 1fr; gap: 15px; }
+            .bulk-banner { flex-direction: column; text-align: center; }
+            .btn-bulk { width: 100%; text-align: center; box-sizing: border-box; }
+            header { flex-direction: column; align-items: flex-start; }
+            header a { align-self: flex-end; }
+        }
+    </style>
 </head>
 <body>
 
@@ -138,8 +178,8 @@ if (isset($_GET['status']) && $_GET['status'] == 'success') {
 
     <div class="main-card">
         <header>
-            <h1>➕ Registro Maestro de Equipos</h1>
-            <a href="dashboard.php" style="text-decoration:none; color:#666;">⬅ Volver al Dashboard</a>
+            <h1>➕ Registro Individual</h1>
+            <a href="dashboard.php" style="text-decoration:none; color:#666;">⬅ Volver</a>
         </header>
 
         <?= $msg ?>
@@ -177,8 +217,8 @@ if (isset($_GET['status']) && $_GET['status'] == 'success') {
 
                 <div class="form-group">
                     <label>Orden de Compra *</label>
-                    <input type="text" name="orden_compra" required placeholder="Ej: 2026-9988">
-                    <small style="color:#666; font-size:0.8rem;">Se guardará en bitácora con prefijo OC:</small>
+                    <input type="text" name="orden_compra" required placeholder="Ej: 2026-9988-OC">
+                    <small style="color:#666; font-size:0.8rem;">Se guardará con prefijo OD:</small>
                 </div>
 
                 <div class="form-group">
@@ -190,7 +230,6 @@ if (isset($_GET['status']) && $_GET['status'] == 'success') {
                     <label>Vida Útil (Años) *</label>
                     <input type="number" name="vida_util" min="1" max="20" required placeholder="Ej: 5" value="5">
                 </div>
-                
                 <div class="form-group">
                     <label>Precio (COP) *</label>
                     <input type="number" name="precio" min="0" step="0.01" required placeholder="Ej: 4500000">
@@ -206,17 +245,16 @@ if (isset($_GET['status']) && $_GET['status'] == 'success') {
                 </div>
 
                 <div class="full-width info-box">
-                    ℹ️ <strong>Trazabilidad Obligatoria:</strong> El equipo será asignado inmediatamente a la <strong>Bodega de Tecnología</strong> bajo tu custodia (<?= htmlspecialchars($_SESSION['usuario_id'] ?? $_SESSION['nombre']) ?>).
+                    ℹ️ <strong>Nota:</strong> El equipo ingresará a <strong>Bodega de Tecnología</strong> bajo tu responsabilidad (<?= htmlspecialchars($_SESSION['usuario_id'] ?? $_SESSION['nombre']) ?>).
                 </div>
                 
                 <div class="full-width">
-                    <button type="submit" class="btn-submit">💾 Registrar e Ingresar a Bodega</button>
+                    <button type="submit" class="btn-submit">💾 Guardar Equipo</button>
                 </div>
             </div>
         </form>
     </div>
 </div>
 
-<script src="js/alta_equipos.js"></script>
 </body>
 </html>

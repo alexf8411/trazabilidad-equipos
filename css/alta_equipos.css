@@ -1,0 +1,157 @@
+/**
+ * public/css/alta_equipos.css
+ * Estilos específicos para el módulo de Registro Maestro (Alta de Equipos)
+ */
+
+:root { 
+    --primary: #002D72; 
+    --accent: #28a745; 
+    --bg: #f0f2f5; 
+    --white: #fff; 
+}
+
+body { 
+    font-family: 'Segoe UI', system-ui, sans-serif; 
+    background: var(--bg); 
+    padding: 20px; 
+    color: #333; 
+    margin: 0; 
+}
+
+.container { 
+    max-width: 850px; 
+    margin: 0 auto; 
+    width: 100%; 
+}
+
+.main-card { 
+    background: var(--white); 
+    padding: 30px; 
+    border-radius: 8px; 
+    box-shadow: 0 4px 15px rgba(0,0,0,0.05); 
+}
+
+header { 
+    border-bottom: 2px solid var(--primary); 
+    padding-bottom: 15px; 
+    margin-bottom: 25px; 
+    display: flex; 
+    justify-content: space-between; 
+    align-items: center; 
+    flex-wrap: wrap; 
+    gap: 10px; 
+}
+
+h1 { 
+    margin: 0; 
+    color: var(--primary); 
+    font-size: 1.5rem; 
+}
+
+.bulk-banner { 
+    background: #e7f1ff; 
+    border: 1px solid #b6d4fe; 
+    padding: 15px; 
+    border-radius: 8px; 
+    margin-bottom: 25px; 
+    display: flex; 
+    justify-content: space-between; 
+    align-items: center; 
+    gap: 15px; 
+}
+
+.btn-bulk { 
+    background: #0d6efd; 
+    color: white; 
+    text-decoration: none; 
+    padding: 10px 20px; 
+    border-radius: 5px; 
+    font-weight: bold; 
+    font-size: 0.9rem; 
+    white-space: nowrap; 
+}
+
+.btn-bulk:hover { 
+    background: #0b5ed7; 
+}
+
+.form-grid { 
+    display: grid; 
+    grid-template-columns: 1fr 1fr; 
+    gap: 20px; 
+}
+
+.form-group { 
+    margin-bottom: 15px; 
+}
+
+label { 
+    display: block; 
+    margin-bottom: 5px; 
+    font-weight: 600; 
+    font-size: 0.9rem; 
+    color: #555; 
+}
+
+input, select { 
+    width: 100%; 
+    padding: 10px; 
+    border: 1px solid #ccc; 
+    border-radius: 4px; 
+    box-sizing: border-box; 
+    font-size: 16px; 
+}
+
+.full-width { 
+    grid-column: 1 / -1; 
+}
+
+.btn-submit { 
+    background: var(--primary); 
+    color: white; 
+    width: 100%; 
+    padding: 12px; 
+    border: none; 
+    border-radius: 4px; 
+    font-size: 1rem; 
+    font-weight: bold; 
+    cursor: pointer; 
+    margin-top: 10px; 
+}
+
+.toast { 
+    padding: 15px; 
+    border-radius: 4px; 
+    margin-bottom: 20px; 
+    border-left: 5px solid; 
+}
+
+.success { 
+    background: #d4edda; 
+    color: #155724; 
+    border-color: #28a745; 
+}
+
+.error { 
+    background: #f8d7da; 
+    color: #721c24; 
+    border-color: #dc3545; 
+}
+
+.info-box { 
+    background: #e9ecef; 
+    padding: 10px; 
+    border-radius: 4px; 
+    font-size: 0.85rem; 
+}
+
+/* Responsividad */
+@media (max-width: 768px) {
+    body { padding: 15px; }
+    .main-card { padding: 20px; }
+    .form-grid { grid-template-columns: 1fr; gap: 15px; }
+    .bulk-banner { flex-direction: column; text-align: center; }
+    .btn-bulk { width: 100%; text-align: center; box-sizing: border-box; }
+    header { flex-direction: column; align-items: flex-start; }
+    header a { align-self: flex-end; }
+}
