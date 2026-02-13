@@ -172,6 +172,19 @@ input[type="file"]:hover {
 }
 
 /* BOTONES */
+/* ICONOS DE ACCIÓN (Ojo, Lápiz, etc) */
+.btn-icon {
+    text-decoration: none; /* Elimina la línea azul de subrayado */
+    font-size: 1.2rem;     /* Hace los emojis un poquito más grandes y legibles */
+    margin: 0 4px;         /* Separa los iconos para que no estén pegados */
+    display: inline-block;
+    transition: transform 0.2s; /* Prepara una animación suave */
+}
+
+.btn-icon:hover {
+    transform: scale(1.2); /* Efecto genial: el icono crece un poco al pasar el mouse */
+    text-decoration: none; /* Asegura que la línea tampoco aparezca en hover */
+}
 .btn {
     display: inline-flex;
     align-items: center;
