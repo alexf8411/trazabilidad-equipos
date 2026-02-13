@@ -184,7 +184,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // ========================================================================
-    // VALIDACIÓN ANTES DE ENVIAR FORMULARIO
+    // VALIDACIÓN ANTES DE ENVIAR FORMULARIO (CORREGIDO)
     // ========================================================================
     const formConfig = document.querySelector('form[method="POST"]');
     
@@ -231,9 +231,20 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             }
 
-            // Deshabilitar botón para evitar doble envío
+            // TRUCO PARA QUE PHP RECIBA 'confirm_save':
+            // Creamos un input oculto dinámicamente con el nombre del botón
+            // antes de deshabilitar el botón real.
+            const hiddenInput = document.createElement('input');
+            hiddenInput.type = 'hidden';
+            hiddenInput.name = 'confirm_save';
+            hiddenInput.value = '1';
+            formConfig.appendChild(hiddenInput);
+
+            // Ahora sí podemos deshabilitar el botón para evitar doble clic
             btnSubmit.disabled = true;
             btnSubmit.textContent = '⏳ Procesando asignación...';
+            
+            // NO usamos e.preventDefault() aquí, así que el formulario se envía al servidor
         });
     }
 

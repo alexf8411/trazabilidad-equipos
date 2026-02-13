@@ -263,7 +263,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['upload_csv'])) {
 }
 
 // FASE 2: Guardar
-if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['items_json'])) {
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirm_save'])) {
     try {
         $items = json_decode($_POST['items_json'], true);
         if (json_last_error() !== JSON_ERROR_NONE) throw new Exception("Datos del CSV inválidos o corruptos al enviar.");
