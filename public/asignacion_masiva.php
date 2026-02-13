@@ -526,8 +526,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirm_save'])) {
             <script>const URTRACK_LUGARES = <?= json_encode($lugares) ?>;</script>
             <script src="js/verificar_ldap.js"></script>
             <script src="js/verificar_ldap_opcional.js"></script>
-            <script src="js/asignacion_masiva.js"></script>
-        <?php endif; ?>
+        <?php endif; ?> <script src="js/asignacion_masiva.js"></script>
     </div>
 </div>
 
