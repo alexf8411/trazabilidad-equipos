@@ -178,7 +178,7 @@ if (isset($_GET['status']) && $_GET['status'] == 'success') {
     <title>Alta de Equipos - URTRACK</title>
     
     <!-- CSS EXTERNO -->
-    <link rel="stylesheet" href="../urtrack-styles.css">
+     <link rel="stylesheet" href="../css/urtrack-styles.css">
 </head>
 <body>
 
