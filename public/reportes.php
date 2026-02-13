@@ -342,7 +342,7 @@ try {
 
         <div class="download-card">
             <div>
-                <h4>📦 Relación de Compras (Altas)</h4>
+                <h4>📦 Relación de Altas</h4>
                 <p>Listado de equipos nuevos, sus costos y el número de Orden de Compra asociada.</p>
             </div>
             <form method="POST">
@@ -351,7 +351,7 @@ try {
                     <input type="date" name="f_fin_a" class="date-input" required value="<?= date('Y-m-d') ?>">
                 </div>
                 <button type="submit" name="btn_altas_compras" class="btn-dl btn-dl-orange">
-                    📥 Descargar Compras
+                    📥 Descargar Altas
                 </button>
             </form>
         </div>
