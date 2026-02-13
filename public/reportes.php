@@ -1,16 +1,18 @@
 <?php
 /**
  * URTRACK - Reportes y Business Intelligence
- * Versión 3.0 OPTIMIZADA
+ * Versión 3.0 FINAL
  * 
- * OPTIMIZACIONES CRÍTICAS:
+ * CAMBIOS APLICADOS:
+ * ✅ KPIs clicables (8 totales)
+ * ✅ Sin badge de caché
+ * ✅ Sin KPI "Valor Inventario"
+ * ✅ Todos los reportes desde KPIs funcionando
  * ✅ LATERAL JOIN (no subconsultas)
  * ✅ Caché en sesión (5 minutos)
  * ✅ Límites estrictos en queries
- * ✅ Prepared statements
  * ✅ CSS centralizado
  * ✅ Responsive completo
- * ✅ Error handling robusto
  */
 
 require_once '../core/db.php';
@@ -37,27 +39,6 @@ $time_filter = $_GET['filter'] ?? 'all';
 $force_refresh = isset($_GET['refresh']);
 
 // ============================================================================
-// FUNCIÓN: OBTENER ÚLTIMO EVENTO (OPTIMIZADA)
-// ============================================================================
-function obtenerUltimoEvento($pdo, $time_filter = 'all') {
-    $where_time = '';
-    
-    switch($time_filter) {
-        case 'day':
-            $where_time = "AND b.fecha_evento >= DATE_SUB(NOW(), INTERVAL 1 DAY)";
-            break;
-        case 'month':
-            $where_time = "AND b.fecha_evento >= DATE_SUB(NOW(), INTERVAL 1 MONTH)";
-            break;
-        case 'year':
-            $where_time = "AND b.fecha_evento >= DATE_SUB(NOW(), INTERVAL 1 YEAR)";
-            break;
-    }
-    
-    return $where_time;
-}
-
-// ============================================================================
 // LÓGICA DE EXPORTACIÓN
 // ============================================================================
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -65,27 +46,203 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $date_now = date('Y-m-d_H-i');
     
     try {
+        // ===== REPORTES DESDE KPIs CLICABLES =====
+        
+        // 1. DESDE KPI: Total Activos
+        if (isset($_POST['btn_kpi_activos'])) {
+            $_POST['btn_inventario'] = true; // Reutilizar código existente
+        }
+        
+        // 2. DESDE KPI: En Bodega
+        if (isset($_POST['btn_kpi_bodega'])) {
+            header('Content-Type: text/csv; charset=utf-8');
+            header('Content-Disposition: attachment; filename=Equipos_Bodega_' . $date_now . '.csv');
+            $output = fopen('php://output', 'w');
+            fprintf($output, chr(0xEF).chr(0xBB).chr(0xBF));
+            
+            fputcsv($output, ['PLACA', 'SERIAL', 'MARCA', 'MODELO', 'SEDE', 'UBICACION', 'FECHA_INGRESO', 'TECNICO']);
+            
+            $sql = "SELECT e.placa_ur, e.serial, e.marca, e.modelo,
+                    last_event.sede, last_event.ubicacion, last_event.fecha_evento, last_event.tecnico_responsable
+                    FROM equipos e
+                    LEFT JOIN LATERAL (
+                        SELECT tipo_evento, sede, ubicacion, fecha_evento, tecnico_responsable
+                        FROM bitacora WHERE serial_equipo = e.serial
+                        ORDER BY id_evento DESC LIMIT 1
+                    ) AS last_event ON TRUE
+                    WHERE e.estado_maestro = 'Alta'
+                    AND last_event.tipo_evento IN ('Devolución', 'Alta', 'Alistamiento')
+                    LIMIT 10000";
+            
+            $stmt = $pdo->query($sql);
+            while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) { 
+                fputcsv($output, array_map(function($v) { return $v ?? ''; }, $row)); 
+            }
+            fclose($output);
+            exit;
+        }
+        
+        // 3. DESDE KPI: Asignados
+        if (isset($_POST['btn_kpi_asignados'])) {
+            header('Content-Type: text/csv; charset=utf-8');
+            header('Content-Disposition: attachment; filename=Equipos_Asignados_' . $date_now . '.csv');
+            $output = fopen('php://output', 'w');
+            fprintf($output, chr(0xEF).chr(0xBB).chr(0xBF));
+            
+            fputcsv($output, ['PLACA', 'SERIAL', 'MARCA', 'MODELO', 'RESPONSABLE', 'SEDE', 'UBICACION', 'FECHA_ASIGNACION', 'HOSTNAME']);
+            
+            $sql = "SELECT e.placa_ur, e.serial, e.marca, e.modelo,
+                    last_event.correo_responsable, last_event.sede, last_event.ubicacion, last_event.fecha_evento, last_event.hostname
+                    FROM equipos e
+                    LEFT JOIN LATERAL (
+                        SELECT tipo_evento, correo_responsable, sede, ubicacion, fecha_evento, hostname
+                        FROM bitacora WHERE serial_equipo = e.serial
+                        ORDER BY id_evento DESC LIMIT 1
+                    ) AS last_event ON TRUE
+                    WHERE e.estado_maestro = 'Alta'
+                    AND last_event.tipo_evento IN ('Asignación', 'Asignacion_Masiva')
+                    LIMIT 10000";
+            
+            $stmt = $pdo->query($sql);
+            while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) { 
+                fputcsv($output, array_map(function($v) { return $v ?? ''; }, $row)); 
+            }
+            fclose($output);
+            exit;
+        }
+        
+        // 4. DESDE KPI: Productividad Mes
+        if (isset($_POST['btn_kpi_productividad'])) {
+            $inicio = date('Y-m-01') . ' 00:00:00';
+            $fin = date('Y-m-t') . ' 23:59:59';
+            
+            header('Content-Type: text/csv; charset=utf-8');
+            header('Content-Disposition: attachment; filename=Movimientos_Mes_' . $date_now . '.csv');
+            $output = fopen('php://output', 'w');
+            fprintf($output, chr(0xEF).chr(0xBB).chr(0xBF));
+            
+            fputcsv($output, ['ID_EVENTO', 'FECHA', 'TIPO', 'PLACA', 'SERIAL', 'EQUIPO', 'SEDE', 'UBICACION', 'RESPONSABLE', 'REALIZADO_POR']);
+            
+            $sql = "SELECT b.id_evento, b.fecha_evento, b.tipo_evento, e.placa_ur, b.serial_equipo,
+                    CONCAT(e.marca, ' ', e.modelo) as equipo, b.sede, b.ubicacion, b.correo_responsable, b.tecnico_responsable
+                    FROM bitacora b
+                    JOIN equipos e ON b.serial_equipo = e.serial
+                    WHERE b.fecha_evento BETWEEN ? AND ?
+                    ORDER BY b.fecha_evento DESC
+                    LIMIT 50000";
+            
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute([$inicio, $fin]);
+            while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) { fputcsv($output, $row); }
+            fclose($output);
+            exit;
+        }
+        
+        // 5. DESDE KPI: Fin de Vida
+        if (isset($_POST['btn_kpi_finvida'])) {
+            header('Content-Type: text/csv; charset=utf-8');
+            header('Content-Disposition: attachment; filename=Equipos_FinVida_' . $date_now . '.csv');
+            $output = fopen('php://output', 'w');
+            fprintf($output, chr(0xEF).chr(0xBB).chr(0xBF));
+            
+            fputcsv($output, ['PLACA', 'SERIAL', 'EQUIPO', 'FECHA_COMPRA', 'VIDA_UTIL', 'ANTIGUEDAD', 'PORCENTAJE_USO']);
+            
+            $sql = "SELECT e.placa_ur, e.serial, CONCAT(e.marca, ' ', e.modelo),
+                    e.fecha_compra, e.vida_util,
+                    TIMESTAMPDIFF(YEAR, e.fecha_compra, NOW()) AS antiguedad,
+                    ROUND((TIMESTAMPDIFF(YEAR, e.fecha_compra, NOW()) / e.vida_util) * 100, 1) AS porcentaje
+                    FROM equipos e
+                    WHERE e.estado_maestro = 'Alta'
+                    AND TIMESTAMPDIFF(YEAR, e.fecha_compra, NOW()) >= (e.vida_util * 0.8)
+                    ORDER BY porcentaje DESC
+                    LIMIT 5000";
+            
+            $stmt = $pdo->query($sql);
+            while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) { fputcsv($output, $row); }
+            fclose($output);
+            exit;
+        }
+        
+        // 6. DESDE KPI: Sin Movimiento
+        if (isset($_POST['btn_kpi_sinmov'])) {
+            header('Content-Type: text/csv; charset=utf-8');
+            header('Content-Disposition: attachment; filename=Bodega_SinMovimiento_' . $date_now . '.csv');
+            $output = fopen('php://output', 'w');
+            fprintf($output, chr(0xEF).chr(0xBB).chr(0xBF));
+            
+            fputcsv($output, ['PLACA', 'SERIAL', 'EQUIPO', 'UBICACION', 'ULTIMO_MOVIMIENTO', 'MESES_INACTIVO']);
+            
+            $sql = "SELECT e.placa_ur, e.serial, CONCAT(e.marca, ' ', e.modelo),
+                    last_event.ubicacion, last_event.fecha_evento,
+                    TIMESTAMPDIFF(MONTH, last_event.fecha_evento, NOW()) AS meses
+                    FROM equipos e
+                    LEFT JOIN LATERAL (
+                        SELECT tipo_evento, ubicacion, fecha_evento
+                        FROM bitacora WHERE serial_equipo = e.serial
+                        ORDER BY id_evento DESC LIMIT 1
+                    ) AS last_event ON TRUE
+                    WHERE e.estado_maestro = 'Alta'
+                    AND last_event.tipo_evento IN ('Devolución', 'Alta', 'Alistamiento')
+                    AND last_event.ubicacion LIKE '%Bodega%'
+                    AND last_event.fecha_evento < DATE_SUB(NOW(), INTERVAL 6 MONTH)
+                    ORDER BY meses DESC
+                    LIMIT 5000";
+            
+            $stmt = $pdo->query($sql);
+            while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) { fputcsv($output, $row); }
+            fclose($output);
+            exit;
+        }
+        
+        // 7. DESDE KPI: Tasa Siniestralidad
+        if (isset($_POST['btn_kpi_siniestralidad'])) {
+            header('Content-Type: text/csv; charset=utf-8');
+            header('Content-Disposition: attachment; filename=Todas_Bajas_' . $date_now . '.csv');
+            $output = fopen('php://output', 'w');
+            fprintf($output, chr(0xEF).chr(0xBB).chr(0xBF));
+            
+            fputcsv($output, ['FECHA_BAJA', 'MOTIVO', 'PLACA', 'SERIAL', 'EQUIPO', 'VALOR_PERDIDO', 'TECNICO']);
+            
+            $sql = "SELECT b.fecha_evento, b.desc_evento, e.placa_ur, e.serial,
+                    CONCAT(e.marca, ' ', e.modelo), e.precio, b.tecnico_responsable
+                    FROM bitacora b
+                    JOIN equipos e ON b.serial_equipo = e.serial
+                    WHERE b.tipo_evento = 'Baja'
+                    ORDER BY b.fecha_evento DESC
+                    LIMIT 10000";
+            
+            $stmt = $pdo->query($sql);
+            while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) { fputcsv($output, $row); }
+            fclose($output);
+            exit;
+        }
+        
+        // 8. DESDE KPI: Sin Compliance
+        if (isset($_POST['btn_kpi_compliance'])) {
+            $_POST['btn_compliance'] = true; // Reutilizar código existente
+        }
+        
+        // ===== REPORTES ORIGINALES (del Centro de Descargas) =====
+        
         // A. INVENTARIO MAESTRO
         if (isset($_POST['btn_inventario'])) {
             header('Content-Type: text/csv; charset=utf-8');
             header('Content-Disposition: attachment; filename=Inventario_Maestro_' . $date_now . '.csv');
             $output = fopen('php://output', 'w');
-            fprintf($output, chr(0xEF).chr(0xBB).chr(0xBF)); // BOM
+            fprintf($output, chr(0xEF).chr(0xBB).chr(0xBF));
             
             fputcsv($output, ['PLACA', 'SERIAL', 'MARCA', 'MODELO', 'MODALIDAD', 'PRECIO', 
                               'FECHA_COMPRA', 'VIDA_UTIL', 'ANTIGUEDAD_ANIOS', 'ESTADO_MAESTRO',
                               'TIPO_ULTIMO_EVENTO', 'FECHA_ULTIMO_MOVIMIENTO', 'ESTADO_OPERATIVO',
                               'SEDE', 'UBICACION', 'RESPONSABLE', 'TECNICO']);
             
-            // QUERY OPTIMIZADA CON LATERAL JOIN
             $sql = "
                 SELECT 
                     e.placa_ur, e.serial, e.marca, e.modelo, e.modalidad, e.precio,
                     e.fecha_compra, e.vida_util,
                     TIMESTAMPDIFF(YEAR, e.fecha_compra, CURDATE()) AS antiguedad,
                     e.estado_maestro,
-                    last_event.tipo_evento,
-                    last_event.fecha_evento,
+                    last_event.tipo_evento, last_event.fecha_evento,
                     CASE 
                         WHEN last_event.tipo_evento IN ('Asignación','Asignacion_Masiva') THEN 'Asignado'
                         WHEN last_event.tipo_evento IN ('Devolución','Alta','Alistamiento') THEN 'Bodega'
@@ -194,7 +351,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
         }
         
-        // E. COMPLIANCE (NUEVO)
+        // E. COMPLIANCE
         if (isset($_POST['btn_compliance'])) {
             header('Content-Type: text/csv; charset=utf-8');
             header('Content-Disposition: attachment; filename=Compliance_' . $date_now . '.csv');
@@ -227,7 +384,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
         }
         
-        // F. OBSOLETOS (NUEVO)
+        // F. OBSOLETOS
         if (isset($_POST['btn_obsoletos'])) {
             header('Content-Type: text/csv; charset=utf-8');
             header('Content-Disposition: attachment; filename=Obsoletos_' . $date_now . '.csv');
@@ -251,11 +408,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
         }
         
-        // G. HOJA DE VIDA (NUEVO)
+        // G. HOJA DE VIDA
         if (isset($_POST['btn_hoja_vida'])) {
             $serial = strtoupper(trim($_POST['serial_hv']));
             
-            // Validación de seguridad
             if (!preg_match('/^[A-Z0-9\-]{3,30}$/i', $serial)) {
                 die("Serial inválido");
             }
@@ -279,41 +435,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             fclose($output);
             exit;
         }
-
-                    // DESDE KPI: Total Activos
-        if (isset($_POST['btn_kpi_activos'])) {
-            // Mismo código que btn_inventario
-            $_POST['btn_inventario'] = true;
-        }
-
-        // DESDE KPI: En Bodega
-        if (isset($_POST['btn_kpi_bodega'])) {
-            header('Content-Type: text/csv; charset=utf-8');
-            header('Content-Disposition: attachment; filename=Equipos_Bodega_' . $date_now . '.csv');
-            $output = fopen('php://output', 'w');
-            fprintf($output, chr(0xEF).chr(0xBB).chr(0xBF));
-            
-            fputcsv($output, ['PLACA', 'SERIAL', 'MARCA', 'MODELO', 'SEDE', 'UBICACION', 'FECHA_INGRESO', 'TECNICO']);
-            
-            $sql = "SELECT e.placa_ur, e.serial, e.marca, e.modelo,
-                    last_event.sede, last_event.ubicacion, last_event.fecha_evento, last_event.tecnico_responsable
-                    FROM equipos e
-                    LEFT JOIN LATERAL (
-                        SELECT tipo_evento, sede, ubicacion, fecha_evento, tecnico_responsable
-                        FROM bitacora WHERE serial_equipo = e.serial
-                        ORDER BY id_evento DESC LIMIT 1
-                    ) AS last_event ON TRUE
-                    WHERE e.estado_maestro = 'Alta'
-                    AND last_event.tipo_evento IN ('Devolución', 'Alta', 'Alistamiento')
-                    LIMIT 10000";
-            
-            $stmt = $pdo->query($sql);
-            while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) { fputcsv($output, array_map(function($v) { return $v ?? ''; }, $row)); }
-            fclose($output);
-            exit;
-        }
-
-        // Repetir para los otros 6 KPIs...
         
     } catch (Exception $e) {
         error_log("Error en reportes: " . $e->getMessage());
@@ -487,7 +608,7 @@ $cache_age = isset($_SESSION[$cache_key_time]) ? (time() - $_SESSION[$cache_key_
         <a href="dashboard.php" class="btn btn-outline">⬅ Volver</a>
     </div>
 
-    <!-- Toolbar -->
+    <!-- Toolbar (SIN BADGE DE CACHÉ) -->
     <div class="report-toolbar">
         <div class="filter-group">
             <span class="filter-label">Período:</span>
@@ -503,8 +624,7 @@ $cache_age = isset($_SESSION[$cache_key_time]) ? (time() - $_SESSION[$cache_key_
         </a>
     </div>
 
-    
-    <!-- KPIs CLICABLES -->
+    <!-- KPIs CLICABLES (8 TOTALES - SIN "VALOR INVENTARIO") -->
     <div class="kpi-grid">
         
         <!-- 1. TOTAL ACTIVOS -->

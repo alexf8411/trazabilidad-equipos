@@ -662,29 +662,6 @@ header h1 {
    ============================================================================ */
 
 /* KPI Grid */
-/* KPIs clicables */
-.kpi-card-clickable {
-    cursor: pointer;
-    transition: all 0.3s;
-}
-
-.kpi-card-clickable:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 10px 25px rgba(0,0,0,0.15);
-}
-
-.kpi-action {
-    font-size: 0.75rem;
-    color: #999;
-    margin-top: 8px;
-    opacity: 0;
-    transition: opacity 0.3s;
-}
-
-.kpi-card-clickable:hover .kpi-action {
-    opacity: 1;
-}
-
 .kpi-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -846,15 +823,18 @@ header h1 {
     display: flex;
     gap: 10px;
     margin-bottom: 15px;
+    flex-wrap: wrap; /* Permite que se envuelvan en pantallas pequeñas */
 }
 
 .date-input {
-    width: 100%;
+    flex: 1;
+    min-width: 120px; /* Ancho mínimo */
     padding: 8px;
     border: 1px solid var(--border-color);
     border-radius: 4px;
     font-family: inherit;
     font-size: 0.9rem;
+    box-sizing: border-box; /* CRÍTICO: Incluye padding en el ancho */
 }
 
 .date-input:focus {
