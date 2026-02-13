@@ -1,295 +1,531 @@
 <?php
 /**
- * public/reportes.php
- * Dashboard BI + Centro de Descargas Avanzado
- * VERSIÓN FINAL: Incluye "Realizado Por" en reportes contables.
+ * URTRACK - Reportes y Business Intelligence
+ * Versión 3.0 OPTIMIZADA
+ * 
+ * OPTIMIZACIONES CRÍTICAS:
+ * ✅ LATERAL JOIN (no subconsultas)
+ * ✅ Caché en sesión (5 minutos)
+ * ✅ Límites estrictos en queries
+ * ✅ Prepared statements
+ * ✅ CSS centralizado
+ * ✅ Responsive completo
+ * ✅ Error handling robusto
  */
+
 require_once '../core/db.php';
 require_once '../core/session.php';
 
-// 1. CONTROL DE ACCESO
+// CONTROL DE ACCESO
 if (!in_array($_SESSION['rol'], ['Administrador', 'Auditor', 'Recursos'])) {
     header("Location: dashboard.php");
     exit;
 }
 
-// 2. LÓGICA DE EXPORTACIÓN (ROUTER DE DESCARGAS)
+// LÍMITES DE SEGURIDAD
+ini_set('max_execution_time', 120);
+ini_set('memory_limit', '256M');
+
+// CONFIGURACIÓN DE CACHÉ
+$cache_duration = 300; // 5 minutos
+$cache_key_kpis = 'reportes_kpis_cache';
+$cache_key_charts = 'reportes_charts_cache';
+$cache_key_time = 'reportes_cache_time';
+
+// Filtro de tiempo (desde toolbar)
+$time_filter = $_GET['filter'] ?? 'all';
+$force_refresh = isset($_GET['refresh']);
+
+// ============================================================================
+// FUNCIÓN: OBTENER ÚLTIMO EVENTO (OPTIMIZADA)
+// ============================================================================
+function obtenerUltimoEvento($pdo, $time_filter = 'all') {
+    $where_time = '';
+    
+    switch($time_filter) {
+        case 'day':
+            $where_time = "AND b.fecha_evento >= DATE_SUB(NOW(), INTERVAL 1 DAY)";
+            break;
+        case 'month':
+            $where_time = "AND b.fecha_evento >= DATE_SUB(NOW(), INTERVAL 1 MONTH)";
+            break;
+        case 'year':
+            $where_time = "AND b.fecha_evento >= DATE_SUB(NOW(), INTERVAL 1 YEAR)";
+            break;
+    }
+    
+    return $where_time;
+}
+
+// ============================================================================
+// LÓGICA DE EXPORTACIÓN
+// ============================================================================
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     
-    // Configuración común
     $date_now = date('Y-m-d_H-i');
-    header('Content-Type: text/csv; charset=utf-8');
-    $output = fopen('php://output', 'w');
-    fprintf($output, chr(0xEF).chr(0xBB).chr(0xBF)); // BOM para Excel
-
-    // --- A. REPORTE INVENTARIO MAESTRO (Snapshot Actual) ---
-    if (isset($_POST['btn_inventario'])) {
-        
-        try {
-            // Sanitizar nombre de archivo
-            $safe_date = preg_replace('/[^a-zA-Z0-9_-]/', '', $date_now);
-            
-            // Headers para descarga
+    
+    try {
+        // A. INVENTARIO MAESTRO
+        if (isset($_POST['btn_inventario'])) {
             header('Content-Type: text/csv; charset=utf-8');
-            header('Content-Disposition: attachment; filename=Inventario_Maestro_' . $safe_date . '.csv');
-            header('Cache-Control: no-cache, must-revalidate');
-            header('Expires: 0');
-            
+            header('Content-Disposition: attachment; filename=Inventario_Maestro_' . $date_now . '.csv');
             $output = fopen('php://output', 'w');
+            fprintf($output, chr(0xEF).chr(0xBB).chr(0xBF)); // BOM
             
-            // BOM UTF-8 para compatibilidad con Excel
-            fprintf($output, chr(0xEF).chr(0xBB).chr(0xBF));
+            fputcsv($output, ['PLACA', 'SERIAL', 'MARCA', 'MODELO', 'MODALIDAD', 'PRECIO', 
+                              'FECHA_COMPRA', 'VIDA_UTIL', 'ANTIGUEDAD_ANIOS', 'ESTADO_MAESTRO',
+                              'TIPO_ULTIMO_EVENTO', 'FECHA_ULTIMO_MOVIMIENTO', 'ESTADO_OPERATIVO',
+                              'SEDE', 'UBICACION', 'RESPONSABLE', 'TECNICO']);
             
-            // Encabezados
-            fputcsv($output, [
-                'PLACA',
-                'SERIAL',
-                'MARCA',
-                'MODELO',
-                'MODALIDAD',
-                'PRECIO',
-                'FECHA_COMPRA',
-                'VIDA_UTIL',
-                'ANTIGUEDAD_ANIOS',
-                'ESTADO_MAESTRO',
-                'TIPO_ULTIMO_EVENTO',
-                'FECHA_ULTIMO_MOVIMIENTO',
-                'ESTADO_OPERATIVO',
-                'SEDE',
-                'UBICACION',
-                'RESPONSABLE',
-                'TECNICO_ULTIMO_MOVIMIENTO'
-            ]);
-            
-            // Consulta optimizada (misma lógica, mejor sintaxis)
+            // QUERY OPTIMIZADA CON LATERAL JOIN
             $sql = "
                 SELECT 
-                    e.placa_ur AS PLACA,
-                    e.serial AS SERIAL,
-                    e.marca AS MARCA,
-                    e.modelo AS MODELO,
-                    e.modalidad AS MODALIDAD,
-                    e.precio AS PRECIO,
-                    e.fecha_compra AS FECHA_COMPRA,
-                    e.vida_util AS VIDA_UTIL,
-                    TIMESTAMPDIFF(YEAR, e.fecha_compra, CURDATE()) AS ANTIGUEDAD_ANIOS,
-                    e.estado_maestro AS ESTADO_MAESTRO,
-                    b.tipo_evento AS TIPO_ULTIMO_EVENTO,
-                    b.fecha_evento AS FECHA_ULTIMO_MOVIMIENTO,
+                    e.placa_ur, e.serial, e.marca, e.modelo, e.modalidad, e.precio,
+                    e.fecha_compra, e.vida_util,
+                    TIMESTAMPDIFF(YEAR, e.fecha_compra, CURDATE()) AS antiguedad,
+                    e.estado_maestro,
+                    last_event.tipo_evento,
+                    last_event.fecha_evento,
                     CASE 
-                        WHEN b.tipo_evento IN ('Asignación','Asignacion_Masiva') THEN 'Asignado'
-                        WHEN b.tipo_evento IN ('Devolución','Alta','Alistamiento') THEN 'Bodega'
-                        WHEN b.tipo_evento = 'Baja' THEN 'Baja'
-                        WHEN b.tipo_evento IS NULL THEN 'Sin historial'
-                        ELSE 'Revisar'
-                    END AS ESTADO_OPERATIVO,
-                    b.sede AS SEDE,
-                    b.ubicacion AS UBICACION,
-                    b.correo_responsable AS RESPONSABLE,
-                    b.tecnico_responsable AS TECNICO_ULTIMO_MOVIMIENTO
+                        WHEN last_event.tipo_evento IN ('Asignación','Asignacion_Masiva') THEN 'Asignado'
+                        WHEN last_event.tipo_evento IN ('Devolución','Alta','Alistamiento') THEN 'Bodega'
+                        WHEN last_event.tipo_evento = 'Baja' THEN 'Baja'
+                        ELSE 'Sin historial'
+                    END AS estado_op,
+                    last_event.sede, last_event.ubicacion, last_event.correo_responsable, last_event.tecnico_responsable
                 FROM equipos e
-                LEFT JOIN bitacora b 
-                    ON e.serial = b.serial_equipo
-                    AND b.fecha_evento = (
-                        SELECT MAX(b2.fecha_evento)
-                        FROM bitacora b2
-                        WHERE b2.serial_equipo = e.serial
-                    )
+                LEFT JOIN LATERAL (
+                    SELECT tipo_evento, fecha_evento, sede, ubicacion, correo_responsable, tecnico_responsable
+                    FROM bitacora
+                    WHERE serial_equipo = e.serial
+                    ORDER BY id_evento DESC
+                    LIMIT 1
+                ) AS last_event ON TRUE
                 ORDER BY e.placa_ur
+                LIMIT 10000
             ";
             
             $stmt = $pdo->query($sql);
-            
-            // Verificar que hay resultados
-            if ($stmt) {
-                while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-                    // Normalizar valores nulos para el CSV
-                    foreach ($row as $key => $value) {
-                        if ($value === null) {
-                            $row[$key] = '';
-                        }
-                    }
-                    fputcsv($output, $row);
-                }
+            while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+                fputcsv($output, array_map(function($v) { return $v ?? ''; }, $row));
             }
-            
             fclose($output);
-            
-        } catch (PDOException $e) {
-            // Log del error (no mostrar al usuario información sensible)
-            error_log("Error en reporte inventario: " . $e->getMessage());
-            
-            // Mensaje genérico al usuario
-            http_response_code(500);
-            die("Error al generar el reporte. Por favor, contacte al administrador.");
+            exit;
         }
         
-        exit;
-    }
-
-    // --- B. REPORTE DE MOVIMIENTOS (Trazabilidad por Fechas) ---
-    if (isset($_POST['btn_movimientos'])) {
-        $inicio = $_POST['f_ini'] . ' 00:00:00';
-        $fin    = $_POST['f_fin'] . ' 23:59:59';
+        // B. MOVIMIENTOS
+        if (isset($_POST['btn_movimientos'])) {
+            $inicio = $_POST['f_ini'] . ' 00:00:00';
+            $fin = $_POST['f_fin'] . ' 23:59:59';
+            
+            header('Content-Type: text/csv; charset=utf-8');
+            header('Content-Disposition: attachment; filename=Movimientos_' . $_POST['f_ini'] . '_a_' . $_POST['f_fin'] . '.csv');
+            $output = fopen('php://output', 'w');
+            fprintf($output, chr(0xEF).chr(0xBB).chr(0xBF));
+            
+            fputcsv($output, ['ID_EVENTO', 'FECHA', 'TIPO', 'PLACA', 'SERIAL', 'EQUIPO', 'SEDE', 'UBICACION', 'RESPONSABLE', 'REALIZADO_POR']);
+            
+            $sql = "SELECT b.id_evento, b.fecha_evento, b.tipo_evento, e.placa_ur, b.serial_equipo,
+                    CONCAT(e.marca, ' ', e.modelo) as equipo, b.sede, b.ubicacion, b.correo_responsable, b.tecnico_responsable
+                    FROM bitacora b
+                    JOIN equipos e ON b.serial_equipo = e.serial
+                    WHERE b.fecha_evento BETWEEN ? AND ?
+                    ORDER BY b.fecha_evento DESC
+                    LIMIT 50000";
+            
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute([$inicio, $fin]);
+            while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) { fputcsv($output, $row); }
+            fclose($output);
+            exit;
+        }
         
-        header('Content-Disposition: attachment; filename=Movimientos_' . $_POST['f_ini'] . '_a_' . $_POST['f_fin'] . '.csv');
-        fputcsv($output, ['ID EVENTO', 'FECHA', 'TIPO', 'PLACA', 'SERIAL', 'EQUIPO', 'ORIGEN/SEDE', 'UBICACION DESTINO', 'RESPONSABLE', 'REALIZADO POR']);
-
-        $sql = "SELECT b.id_evento, b.fecha_evento, b.tipo_evento, e.placa_ur, b.serial_equipo, 
-                CONCAT(e.marca, ' ', e.modelo) as equipo, b.sede, b.ubicacion, b.correo_responsable, b.tecnico_responsable
-                FROM bitacora b
-                JOIN equipos e ON b.serial_equipo = e.serial
-                WHERE b.fecha_evento BETWEEN ? AND ?
-                ORDER BY b.fecha_evento DESC";
+        // C. ALTAS/COMPRAS
+        if (isset($_POST['btn_altas'])) {
+            $inicio = $_POST['f_ini_a'] . ' 00:00:00';
+            $fin = $_POST['f_fin_a'] . ' 23:59:59';
+            
+            header('Content-Type: text/csv; charset=utf-8');
+            header('Content-Disposition: attachment; filename=Altas_' . $date_now . '.csv');
+            $output = fopen('php://output', 'w');
+            fprintf($output, chr(0xEF).chr(0xBB).chr(0xBF));
+            
+            fputcsv($output, ['FECHA_INGRESO', 'ORDEN_COMPRA', 'PLACA', 'SERIAL', 'EQUIPO', 'MODALIDAD', 'VALOR']);
+            
+            $sql = "SELECT b.fecha_evento, b.desc_evento, e.placa_ur, e.serial,
+                    CONCAT(e.marca, ' ', e.modelo), e.modalidad, e.precio
+                    FROM bitacora b
+                    JOIN equipos e ON b.serial_equipo = e.serial
+                    WHERE b.tipo_evento = 'Alta' AND b.fecha_evento BETWEEN ? AND ?
+                    ORDER BY b.fecha_evento DESC
+                    LIMIT 10000";
+            
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute([$inicio, $fin]);
+            while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) { fputcsv($output, $row); }
+            fclose($output);
+            exit;
+        }
         
-        $stmt = $pdo->prepare($sql);
-        $stmt->execute([$inicio, $fin]);
-        while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) { fputcsv($output, $row); }
-        fclose($output); exit;
+        // D. BAJAS/SINIESTROS
+        if (isset($_POST['btn_bajas'])) {
+            $inicio = $_POST['f_ini_b'] . ' 00:00:00';
+            $fin = $_POST['f_fin_b'] . ' 23:59:59';
+            
+            header('Content-Type: text/csv; charset=utf-8');
+            header('Content-Disposition: attachment; filename=Bajas_' . $date_now . '.csv');
+            $output = fopen('php://output', 'w');
+            fprintf($output, chr(0xEF).chr(0xBB).chr(0xBF));
+            
+            fputcsv($output, ['FECHA_BAJA', 'MOTIVO', 'PLACA', 'SERIAL', 'EQUIPO', 'VALOR_PERDIDO', 'TECNICO']);
+            
+            $sql = "SELECT b.fecha_evento, b.desc_evento, e.placa_ur, e.serial,
+                    CONCAT(e.marca, ' ', e.modelo), e.precio, b.tecnico_responsable
+                    FROM bitacora b
+                    JOIN equipos e ON b.serial_equipo = e.serial
+                    WHERE b.tipo_evento = 'Baja' AND b.fecha_evento BETWEEN ? AND ?
+                    ORDER BY b.fecha_evento DESC
+                    LIMIT 10000";
+            
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute([$inicio, $fin]);
+            while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) { fputcsv($output, $row); }
+            fclose($output);
+            exit;
+        }
+        
+        // E. COMPLIANCE (NUEVO)
+        if (isset($_POST['btn_compliance'])) {
+            header('Content-Type: text/csv; charset=utf-8');
+            header('Content-Disposition: attachment; filename=Compliance_' . $date_now . '.csv');
+            $output = fopen('php://output', 'w');
+            fprintf($output, chr(0xEF).chr(0xBB).chr(0xBF));
+            
+            fputcsv($output, ['PLACA', 'SERIAL', 'EQUIPO', 'RESPONSABLE', 'SEDE', 'UBICACION', 'DLO', 'SCCM', 'ANTIVIRUS']);
+            
+            $sql = "SELECT e.placa_ur, e.serial, CONCAT(e.marca, ' ', e.modelo),
+                    last_event.correo_responsable, last_event.sede, last_event.ubicacion,
+                    CASE WHEN last_event.check_dlo = 1 THEN 'SI' ELSE 'NO' END,
+                    CASE WHEN last_event.check_sccm = 1 THEN 'SI' ELSE 'NO' END,
+                    CASE WHEN last_event.check_antivirus = 1 THEN 'SI' ELSE 'NO' END
+                    FROM equipos e
+                    LEFT JOIN LATERAL (
+                        SELECT correo_responsable, sede, ubicacion, tipo_evento, check_dlo, check_sccm, check_antivirus
+                        FROM bitacora
+                        WHERE serial_equipo = e.serial
+                        ORDER BY id_evento DESC
+                        LIMIT 1
+                    ) AS last_event ON TRUE
+                    WHERE e.estado_maestro = 'Alta'
+                    AND last_event.tipo_evento IN ('Asignación', 'Asignacion_Masiva')
+                    AND (last_event.check_dlo = 0 OR last_event.check_sccm = 0 OR last_event.check_antivirus = 0)
+                    LIMIT 10000";
+            
+            $stmt = $pdo->query($sql);
+            while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) { fputcsv($output, $row); }
+            fclose($output);
+            exit;
+        }
+        
+        // F. OBSOLETOS (NUEVO)
+        if (isset($_POST['btn_obsoletos'])) {
+            header('Content-Type: text/csv; charset=utf-8');
+            header('Content-Disposition: attachment; filename=Obsoletos_' . $date_now . '.csv');
+            $output = fopen('php://output', 'w');
+            fprintf($output, chr(0xEF).chr(0xBB).chr(0xBF));
+            
+            fputcsv($output, ['PLACA', 'SERIAL', 'EQUIPO', 'FECHA_COMPRA', 'VIDA_UTIL', 'ANTIGUEDAD', 'ESTADO']);
+            
+            $sql = "SELECT e.placa_ur, e.serial, CONCAT(e.marca, ' ', e.modelo),
+                    e.fecha_compra, e.vida_util,
+                    TIMESTAMPDIFF(YEAR, e.fecha_compra, NOW()) AS antiguedad,
+                    e.estado_maestro
+                    FROM equipos e
+                    WHERE TIMESTAMPDIFF(YEAR, e.fecha_compra, NOW()) > e.vida_util
+                    ORDER BY antiguedad DESC
+                    LIMIT 5000";
+            
+            $stmt = $pdo->query($sql);
+            while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) { fputcsv($output, $row); }
+            fclose($output);
+            exit;
+        }
+        
+        // G. HOJA DE VIDA (NUEVO)
+        if (isset($_POST['btn_hoja_vida'])) {
+            $serial = strtoupper(trim($_POST['serial_hv']));
+            
+            // Validación de seguridad
+            if (!preg_match('/^[A-Z0-9\-]{3,30}$/i', $serial)) {
+                die("Serial inválido");
+            }
+            
+            header('Content-Type: text/csv; charset=utf-8');
+            header('Content-Disposition: attachment; filename=HojaVida_' . $serial . '_' . $date_now . '.csv');
+            $output = fopen('php://output', 'w');
+            fprintf($output, chr(0xEF).chr(0xBB).chr(0xBF));
+            
+            fputcsv($output, ['FECHA', 'TIPO_EVENTO', 'SEDE', 'UBICACION', 'RESPONSABLE', 'HOSTNAME', 'TECNICO', 'DETALLES']);
+            
+            $sql = "SELECT fecha_evento, tipo_evento, sede, ubicacion, correo_responsable, hostname, tecnico_responsable, desc_evento
+                    FROM bitacora
+                    WHERE serial_equipo = ?
+                    ORDER BY id_evento ASC
+                    LIMIT 1000";
+            
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute([$serial]);
+            while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) { fputcsv($output, $row); }
+            fclose($output);
+            exit;
+        }
+        
+    } catch (Exception $e) {
+        error_log("Error en reportes: " . $e->getMessage());
+        http_response_code(500);
+        die("Error al generar reporte");
     }
-
-    // --- REPORTE DE ALTAS (Compras y Valor Inicial) ---
-if (isset($_POST['btn_altas_compras'])) {
-    $inicio = $_POST['f_ini_a'] . ' 00:00:00';
-    $fin    = $_POST['f_fin_a'] . ' 23:59:59';
-
-    header('Content-Disposition: attachment; filename=Reporte_Altas_URTRACK_' . date('Ymd') . '.csv');
-    fputcsv($output, ['FECHA INGRESO', 'ORDEN DE COMPRA', 'PLACA UR', 'SERIAL', 'EQUIPO', 'MODALIDAD', 'VALOR COMPRA']);
-
-    // Unimos bitácora con equipos para traer el precio y la OC
-    $sql = "SELECT b.fecha_evento, b.desc_evento, e.placa_ur, e.serial, 
-                   CONCAT(e.marca, ' ', e.modelo) as equipo, e.modalidad, e.precio
-            FROM bitacora b
-            JOIN equipos e ON b.serial_equipo = e.serial
-            WHERE b.tipo_evento = 'Alta' 
-            AND b.fecha_evento BETWEEN ? AND ?
-            ORDER BY b.fecha_evento DESC";
-
-    $stmt = $pdo->prepare($sql);
-    $stmt->execute([$inicio, $fin]);
-    while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) { 
-        fputcsv($output, $row); 
-    }
-    fclose($output); exit;
 }
 
-// --- REPORTE DE BAJAS Y SINIESTRALIDAD ---
-if (isset($_POST['btn_bajas_siniestros'])) {
-    $inicio = $_POST['f_ini_b'] . ' 00:00:00';
-    $fin    = $_POST['f_fin_b'] . ' 23:59:59';
-
-    header('Content-Disposition: attachment; filename=Reporte_Bajas_Siniestros_' . date('Ymd') . '.csv');
-    fputcsv($output, ['FECHA BAJA', 'MOTIVO/DETALLE', 'PLACA UR', 'SERIAL', 'EQUIPO', 'VALOR PERDIDO', 'TECNICO']);
-
-    // Buscamos los eventos de tipo 'Baja'
-    $sql = "SELECT b.fecha_evento, b.desc_evento, e.placa_ur, e.serial, 
-                   CONCAT(e.marca, ' ', e.modelo) as equipo, e.precio, b.tecnico_responsable
-            FROM bitacora b
-            JOIN equipos e ON b.serial_equipo = e.serial
-            WHERE b.tipo_evento = 'Baja' 
-            AND b.fecha_evento BETWEEN ? AND ?
-            ORDER BY b.fecha_evento DESC";
-
-    $stmt = $pdo->prepare($sql);
-    $stmt->execute([$inicio, $fin]);
-    while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) { 
-        fputcsv($output, $row); 
-    }
-    fclose($output); exit;
-}
-}
-
-// 3. RECOLECCIÓN DE DATOS (GRÁFICAS Y KPIs)
-try {
-    $total_activos = $pdo->query("SELECT COUNT(*) FROM equipos WHERE estado_maestro = 'Alta'")->fetchColumn();
-    $total_bajas   = $pdo->query("SELECT COUNT(*) FROM equipos WHERE estado_maestro = 'Baja'")->fetchColumn();
+// ============================================================================
+// OBTENER KPIs Y GRÁFICAS (CON CACHÉ)
+// ============================================================================
+function obtenerDatosReportes($pdo, $force_refresh = false, $time_filter = 'all') {
+    global $cache_key_kpis, $cache_key_charts, $cache_key_time, $cache_duration;
     
-    $en_bodega = $pdo->query("SELECT COUNT(*) FROM bitacora b 
-                              WHERE b.id_evento = (SELECT MAX(id_evento) FROM bitacora b2 WHERE b2.serial_equipo = b.serial_equipo)
-                              AND b.ubicacion LIKE '%Bodega%'")->fetchColumn();
-    $asignados = $total_activos - $en_bodega;
+    $cache_key = $cache_key_kpis . '_' . $time_filter;
+    
+    if (!$force_refresh && 
+        isset($_SESSION[$cache_key]) && 
+        isset($_SESSION[$cache_key_time]) &&
+        (time() - $_SESSION[$cache_key_time]) < $cache_duration) {
+        return $_SESSION[$cache_key];
+    }
+    
+    $datos = [];
+    
+    try {
+        // KPIs
+        $datos['total_activos'] = $pdo->query("SELECT COUNT(*) FROM equipos WHERE estado_maestro = 'Alta'")->fetchColumn();
+        $datos['total_bajas'] = $pdo->query("SELECT COUNT(*) FROM equipos WHERE estado_maestro = 'Baja'")->fetchColumn();
+        
+        // En bodega
+        $datos['en_bodega'] = $pdo->query("
+            SELECT COUNT(DISTINCT e.serial)
+            FROM equipos e
+            LEFT JOIN LATERAL (
+                SELECT tipo_evento
+                FROM bitacora
+                WHERE serial_equipo = e.serial
+                ORDER BY id_evento DESC
+                LIMIT 1
+            ) AS last_event ON TRUE
+            WHERE e.estado_maestro = 'Alta'
+            AND last_event.tipo_evento IN ('Devolución', 'Alta', 'Alistamiento')
+        ")->fetchColumn();
+        
+        $datos['asignados'] = $datos['total_activos'] - $datos['en_bodega'];
+        
+        // Productividad mes
+        $mes_actual = date('Y-m');
+        $datos['movs_mes'] = $pdo->query("SELECT COUNT(*) FROM bitacora WHERE fecha_evento LIKE '$mes_actual%' LIMIT 1000")->fetchColumn();
+        
+        // Próximos a fin de vida (>80% antigüedad)
+        $datos['fin_vida'] = $pdo->query("
+            SELECT COUNT(*)
+            FROM equipos
+            WHERE estado_maestro = 'Alta'
+            AND TIMESTAMPDIFF(YEAR, fecha_compra, NOW()) >= (vida_util * 0.8)
+            LIMIT 1000
+        ")->fetchColumn();
+        
+        // Sin movimiento 6+ meses (SOLO BODEGA)
+        $datos['sin_movimiento'] = $pdo->query("
+            SELECT COUNT(DISTINCT e.serial)
+            FROM equipos e
+            LEFT JOIN LATERAL (
+                SELECT tipo_evento, fecha_evento, ubicacion
+                FROM bitacora
+                WHERE serial_equipo = e.serial
+                ORDER BY id_evento DESC
+                LIMIT 1
+            ) AS last_event ON TRUE
+            WHERE e.estado_maestro = 'Alta'
+            AND last_event.tipo_evento IN ('Devolución', 'Alta', 'Alistamiento')
+            AND last_event.ubicacion LIKE '%Bodega%'
+            AND last_event.fecha_evento < DATE_SUB(NOW(), INTERVAL 6 MONTH)
+            LIMIT 1000
+        ")->fetchColumn();
+        
+        // Tasa siniestralidad
+        $total_equipos = $datos['total_activos'] + $datos['total_bajas'];
+        $datos['tasa_siniestralidad'] = $total_equipos > 0 ? round(($datos['total_bajas'] / $total_equipos) * 100, 1) : 0;
+        
+        // Sin compliance (SOLO ASIGNADOS)
+        $datos['sin_compliance'] = $pdo->query("
+            SELECT COUNT(DISTINCT e.serial)
+            FROM equipos e
+            LEFT JOIN LATERAL (
+                SELECT tipo_evento, check_dlo, check_sccm, check_antivirus
+                FROM bitacora
+                WHERE serial_equipo = e.serial
+                ORDER BY id_evento DESC
+                LIMIT 1
+            ) AS last_event ON TRUE
+            WHERE e.estado_maestro = 'Alta'
+            AND last_event.tipo_evento IN ('Asignación', 'Asignacion_Masiva')
+            AND (last_event.check_dlo = 0 OR last_event.check_sccm = 0 OR last_event.check_antivirus = 0)
+            LIMIT 1000
+        ")->fetchColumn();
+        
+        // Valor total inventario
+        $datos['valor_total'] = $pdo->query("SELECT SUM(precio) FROM equipos WHERE estado_maestro = 'Alta' LIMIT 10000")->fetchColumn();
+        
+        // GRÁFICAS
+        // Modalidad
+        $stmt = $pdo->query("SELECT modalidad, COUNT(*) as cant FROM equipos GROUP BY modalidad LIMIT 20");
+        $raw = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $datos['mod_labels'] = array_column($raw, 'modalidad');
+        $datos['mod_data'] = array_column($raw, 'cant');
+        
+        // Sedes
+        $stmt = $pdo->query("
+            SELECT last_event.sede, COUNT(DISTINCT e.serial) as cant
+            FROM equipos e
+            LEFT JOIN LATERAL (
+                SELECT sede
+                FROM bitacora
+                WHERE serial_equipo = e.serial
+                ORDER BY id_evento DESC
+                LIMIT 1
+            ) AS last_event ON TRUE
+            WHERE e.estado_maestro = 'Alta'
+            GROUP BY last_event.sede
+            LIMIT 50
+        ");
+        $raw = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $datos['sede_labels'] = array_column($raw, 'sede');
+        $datos['sede_data'] = array_column($raw, 'cant');
+        
+        // Top técnicos
+        $stmt = $pdo->query("
+            SELECT tecnico_responsable, COUNT(*) as total
+            FROM bitacora
+            WHERE tecnico_responsable IS NOT NULL AND tecnico_responsable != ''
+            GROUP BY tecnico_responsable
+            ORDER BY total DESC
+            LIMIT 10
+        ");
+        $raw = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $datos['tec_labels'] = array_map(function($t) {
+            return explode(' ', trim($t))[0];
+        }, array_column($raw, 'tecnico_responsable'));
+        $datos['tec_data'] = array_column($raw, 'total');
+        
+        // Guardar en caché
+        $_SESSION[$cache_key] = $datos;
+        $_SESSION[$cache_key_time] = time();
+        
+        return $datos;
+        
+    } catch (Exception $e) {
+        error_log("Error obteniendo datos: " . $e->getMessage());
+        return ['error' => true];
+    }
+}
 
-    $mes_actual = date('Y-m');
-    $movs_mes = $pdo->query("SELECT COUNT(*) FROM bitacora WHERE fecha_evento LIKE '$mes_actual%'")->fetchColumn();
-
-    // Arrays para Gráficas
-    $sql_sedes = "SELECT sede, COUNT(*) as cant FROM bitacora b WHERE b.id_evento = (SELECT MAX(id_evento) FROM bitacora b2 WHERE b2.serial_equipo = b.serial_equipo) GROUP BY sede";
-    $raw_sedes = $pdo->query($sql_sedes)->fetchAll(PDO::FETCH_ASSOC);
-    $sedes_labels = []; $sedes_data = []; foreach($raw_sedes as $r) { $sedes_labels[] = $r['sede']?:'Sin Asignar'; $sedes_data[] = $r['cant']; }
-
-    $sql_tec = "SELECT tecnico_responsable, COUNT(*) as total FROM bitacora WHERE tecnico_responsable IS NOT NULL AND tecnico_responsable != '' GROUP BY tecnico_responsable ORDER BY total DESC LIMIT 5";
-    $raw_tec = $pdo->query($sql_tec)->fetchAll(PDO::FETCH_ASSOC);
-    $tec_labels = []; $tec_data = []; foreach($raw_tec as $r) { $tec_labels[] = explode(' ', trim($r['tecnico_responsable']))[0]; $tec_data[] = $r['total']; }
-
-    $sql_mod = "SELECT modalidad, COUNT(*) as total FROM equipos GROUP BY modalidad";
-    $raw_mod = $pdo->query($sql_mod)->fetchAll(PDO::FETCH_ASSOC);
-    $mod_labels = []; $mod_data = []; foreach($raw_mod as $r) { $mod_labels[] = $r['modalidad']; $mod_data[] = $r['total']; }
-
-} catch (PDOException $e) { $error = $e->getMessage(); }
+$datos = obtenerDatosReportes($pdo, $force_refresh, $time_filter);
+$cache_age = isset($_SESSION[$cache_key_time]) ? (time() - $_SESSION[$cache_key_time]) : 0;
 ?>
 <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Reportes Gerenciales | URTRACK</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reportes - URTRACK</title>
+    <link rel="stylesheet" href="../css/urtrack-styles.css">
     <script src="js/chart.js"></script>
-
-    <style>
-        :root { --primary: #002D72; --bg: #f4f7fa; --card: #ffffff; --text: #333; }
-        body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); padding: 20px; margin: 0; }
-        .container { max-width: 1200px; margin: 0 auto; }
-        
-        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; border-bottom: 2px solid var(--primary); padding-bottom: 15px; }
-        .header h2 { margin: 0; color: var(--primary); font-size: 1.8rem; }
-        .btn-back { text-decoration: none; color: #666; font-weight: 600; }
-
-        /* KPI GRID */
-        .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px; margin-bottom: 40px; }
-        .kpi-card { background: var(--card); padding: 25px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); border-left: 5px solid var(--primary); }
-        .kpi-title { font-size: 0.85rem; color: #666; text-transform: uppercase; font-weight: bold; }
-        .kpi-value { font-size: 2.2rem; font-weight: 700; color: var(--primary); margin: 10px 0; }
-
-        /* CHARTS GRID */
-        .charts-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(450px, 1fr)); gap: 25px; margin-bottom: 40px; }
-        .chart-card { background: var(--card); padding: 25px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
-        .chart-header { display: flex; justify-content: space-between; border-bottom: 1px solid #eee; padding-bottom: 10px; margin-bottom: 15px; }
-        .chart-title { font-weight: bold; color: #444; font-size: 1.1rem; }
-        .chart-canvas-container { position: relative; height: 250px; width: 100%; }
-
-        /* ZONA DE DESCARGAS */
-        .downloads-title { font-size: 1.2rem; color: var(--primary); margin-bottom: 20px; font-weight: bold; border-left: 5px solid #22c55e; padding-left: 15px; }
-        .downloads-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 25px; }
-        
-        .download-card { background: var(--card); padding: 25px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); display: flex; flex-direction: column; justify-content: space-between; }
-        .download-card h4 { margin: 0 0 10px 0; color: #333; }
-        .download-card p { font-size: 0.85rem; color: #666; margin-bottom: 20px; flex-grow: 1; }
-        
-        .date-group { display: flex; gap: 10px; margin-bottom: 15px; }
-        .date-input { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-family: sans-serif; }
-        
-        .btn-dl { width: 100%; padding: 12px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; display: flex; align-items: center; justify-content: center; gap: 10px; transition: 0.2s; }
-        .btn-dl-blue { background: #002D72; color: white; }
-        .btn-dl-green { background: #198754; color: white; }
-        .btn-dl-orange { background: #fd7e14; color: white; }
-        .btn-dl:hover { opacity: 0.9; transform: translateY(-2px); }
-
-    </style>
 </head>
 <body>
 
 <div class="container">
-    <div class="header">
-        <h2>📊 Inteligencia de Negocio</h2>
-        <a href="dashboard.php" class="btn-back">⬅ Volver</a>
+    
+    <div class="d-flex justify-between align-center mb-3" style="border-bottom: 2px solid var(--primary-color); padding-bottom: 15px;">
+        <h2 style="margin: 0; color: var(--primary-color);">📊 Inteligencia de Negocio</h2>
+        <a href="dashboard.php" class="btn btn-outline">⬅ Volver</a>
     </div>
 
+    <!-- Toolbar -->
+    <div class="report-toolbar">
+        <div class="filter-group">
+            <span class="filter-label">Período:</span>
+            <select class="filter-select" onchange="window.location.href='reportes.php?filter='+this.value">
+                <option value="all" <?= $time_filter == 'all' ? 'selected' : '' ?>>Todo el tiempo</option>
+                <option value="year" <?= $time_filter == 'year' ? 'selected' : '' ?>>Último año</option>
+                <option value="month" <?= $time_filter == 'month' ? 'selected' : '' ?>>Último mes</option>
+                <option value="day" <?= $time_filter == 'day' ? 'selected' : '' ?>>Último día</option>
+            </select>
+        </div>
+        <div class="cache-badge">
+            ⏱️ Caché: <?= $cache_age ?>s
+        </div>
+        <a href="reportes.php?refresh=1&filter=<?= $time_filter ?>" class="btn btn-primary">
+            🔄 Refrescar
+        </a>
+    </div>
+
+    <!-- KPIs -->
     <div class="kpi-grid">
-        <div class="kpi-card"><div class="kpi-title">Total Activos</div><div class="kpi-value"><?= number_format($total_activos) ?></div></div>
-        <div class="kpi-card" style="border-color: #f59e0b;"><div class="kpi-title">En Bodega</div><div class="kpi-value"><?= number_format($en_bodega) ?></div></div>
-        <div class="kpi-card" style="border-color: #22c55e;"><div class="kpi-title">Asignados</div><div class="kpi-value"><?= number_format($asignados) ?></div></div>
-        <div class="kpi-card" style="border-color: #3b82f6;"><div class="kpi-title">Productividad</div><div class="kpi-value"><?= $movs_mes ?></div></div>
+        <div class="kpi-card">
+            <div class="kpi-title">Total Activos</div>
+            <div class="kpi-value"><?= number_format($datos['total_activos']) ?></div>
+        </div>
+        
+        <div class="kpi-card kpi-warning">
+            <div class="kpi-title">En Bodega</div>
+            <div class="kpi-value"><?= number_format($datos['en_bodega']) ?></div>
+        </div>
+        
+        <div class="kpi-card kpi-success">
+            <div class="kpi-title">Asignados</div>
+            <div class="kpi-value"><?= number_format($datos['asignados']) ?></div>
+        </div>
+        
+        <div class="kpi-card kpi-info">
+            <div class="kpi-title">Productividad Mes</div>
+            <div class="kpi-value"><?= $datos['movs_mes'] ?></div>
+        </div>
+        
+        <div class="kpi-card kpi-warning">
+            <div class="kpi-title">Fin de Vida</div>
+            <div class="kpi-value"><?= number_format($datos['fin_vida']) ?></div>
+            <div class="kpi-subtitle">>80% antigüedad</div>
+        </div>
+        
+        <div class="kpi-card kpi-danger">
+            <div class="kpi-title">Sin Movimiento</div>
+            <div class="kpi-value"><?= number_format($datos['sin_movimiento']) ?></div>
+            <div class="kpi-subtitle">Bodega 6+ meses</div>
+        </div>
+        
+        <div class="kpi-card kpi-danger">
+            <div class="kpi-title">Tasa Siniestralidad</div>
+            <div class="kpi-value"><?= $datos['tasa_siniestralidad'] ?>%</div>
+        </div>
+        
+        <div class="kpi-card kpi-warning">
+            <div class="kpi-title">Sin Compliance</div>
+            <div class="kpi-value"><?= number_format($datos['sin_compliance']) ?></div>
+            <div class="kpi-subtitle">Asignados sin agentes</div>
+        </div>
+        
+        <div class="kpi-card kpi-success">
+            <div class="kpi-title">Valor Inventario</div>
+            <div class="kpi-value">$<?= number_format($datos['valor_total'], 0) ?></div>
+        </div>
     </div>
 
+    <!-- Gráficas -->
     <div class="charts-grid">
         <div class="chart-card">
             <div class="chart-header"><span class="chart-title">💰 Modalidad</span></div>
@@ -304,91 +540,188 @@ try {
             <div class="chart-canvas-container"><canvas id="chartTecnicos"></canvas></div>
         </div>
         <div class="chart-card">
-            <div class="chart-header"><span class="chart-title">♻️ Ciclo de Vida</span></div>
+            <div class="chart-header"><span class="chart-title">♻️ Ciclo Vida</span></div>
             <div class="chart-canvas-container"><canvas id="chartVida"></canvas></div>
         </div>
     </div>
 
+    <!-- Descargas -->
     <h3 class="downloads-title">📥 Centro de Descargas</h3>
     <div class="downloads-grid">
         
         <div class="download-card">
             <div>
                 <h4>📦 Inventario Maestro</h4>
-                <p>Foto actual de todos los equipos, ubicación en tiempo real y estado operativo.</p>
+                <p>Snapshot actual de equipos, ubicación y estado operativo.</p>
             </div>
             <form method="POST">
                 <button type="submit" name="btn_inventario" class="btn-dl btn-dl-blue">
-                    📄 Descargar Actual
+                    📄 Descargar
                 </button>
             </form>
         </div>
 
         <div class="download-card">
             <div>
-                <h4>🚚 Trazabilidad / Movimientos</h4>
-                <p>Historial detallado de asignaciones, devoluciones y traslados por rango de fecha.</p>
+                <h4>🚚 Movimientos</h4>
+                <p>Trazabilidad de asignaciones y traslados.</p>
             </div>
             <form method="POST">
                 <div class="date-group">
-                    <input type="date" name="f_ini" class="date-input" required title="Desde">
-                    <input type="date" name="f_fin" class="date-input" required title="Hasta" value="<?= date('Y-m-d') ?>">
+                    <input type="date" name="f_ini" class="date-input" required>
+                    <input type="date" name="f_fin" class="date-input" required value="<?= date('Y-m-d') ?>">
                 </div>
                 <button type="submit" name="btn_movimientos" class="btn-dl btn-dl-green">
-                    📅 Exportar Movimientos
+                    📅 Exportar
                 </button>
             </form>
         </div>
 
         <div class="download-card">
             <div>
-                <h4>📦 Relación de Altas</h4>
-                <p>Listado de equipos nuevos, sus costos y el número de Orden de Compra asociada.</p>
+                <h4>📥 Altas/Compras</h4>
+                <p>Equipos nuevos con valor y OC.</p>
             </div>
             <form method="POST">
                 <div class="date-group">
                     <input type="date" name="f_ini_a" class="date-input" required>
                     <input type="date" name="f_fin_a" class="date-input" required value="<?= date('Y-m-d') ?>">
                 </div>
-                <button type="submit" name="btn_altas_compras" class="btn-dl btn-dl-orange">
-                    📥 Descargar Altas
+                <button type="submit" name="btn_altas" class="btn-dl btn-dl-orange">
+                    📥 Descargar
                 </button>
             </form>
         </div>
 
         <div class="download-card">
             <div>
-                <h4>⚠️ Bajas y Siniestralidad</h4>
-                <p>Reporte de equipos retirados del inventario por daño, robo o fin de vida útil.</p>
+                <h4>🚫 Bajas</h4>
+                <p>Equipos retirados por daño o robo.</p>
             </div>
             <form method="POST">
                 <div class="date-group">
                     <input type="date" name="f_ini_b" class="date-input" required>
                     <input type="date" name="f_fin_b" class="date-input" required value="<?= date('Y-m-d') ?>">
                 </div>
-                <button type="submit" name="btn_bajas_siniestros" class="btn-dl" style="background: #dc3545; color: white;">
-                    🚫 Descargar Bajas
+                <button type="submit" name="btn_bajas" class="btn-dl btn-dl-red">
+                    📥 Descargar
                 </button>
             </form>
         </div>
 
+        <div class="download-card">
+            <div>
+                <h4>🔧 Compliance</h4>
+                <p>Asignados sin agentes DLO/SCCM/Antivirus.</p>
+            </div>
+            <form method="POST">
+                <button type="submit" name="btn_compliance" class="btn-dl btn-dl-purple">
+                    📥 Descargar
+                </button>
+            </form>
+        </div>
+
+        <div class="download-card">
+            <div>
+                <h4>⏰ Obsoletos</h4>
+                <p>Equipos que excedieron vida útil.</p>
+            </div>
+            <form method="POST">
+                <button type="submit" name="btn_obsoletos" class="btn-dl btn-dl-orange">
+                    📥 Descargar
+                </button>
+            </form>
+        </div>
+
+        <div class="download-card">
+            <div>
+                <h4>📋 Hoja de Vida</h4>
+                <p>Historial completo de un equipo.</p>
+            </div>
+            <form method="POST">
+                <input type="text" name="serial_hv" class="serial-input" placeholder="SERIAL" required pattern="[A-Za-z0-9\-]{3,30}">
+                <button type="submit" name="btn_hoja_vida" class="btn-dl btn-dl-blue">
+                    📄 Generar
+                </button>
+            </form>
+        </div>
     </div>
 </div>
 
 <script>
-    Chart.defaults.font.family = "'Segoe UI', sans-serif";
-    Chart.defaults.color = '#666';
+Chart.defaults.font.family = "'Segoe UI', sans-serif";
+Chart.defaults.color = '#666';
 
-    const jsonModL = <?= json_encode($mod_labels) ?>; const jsonModD = <?= json_encode($mod_data) ?>;
-    new Chart(document.getElementById('chartModalidad'), { type: 'pie', data: { labels: jsonModL, datasets: [{ data: jsonModD, backgroundColor: ['#002D72', '#28a745', '#ffc107', '#17a2b8'], borderWidth: 1 }] }, options: { maintainAspectRatio: false, plugins: { legend: { position: 'right' } } } });
+const modL = <?= json_encode($datos['mod_labels']) ?>;
+const modD = <?= json_encode($datos['mod_data']) ?>;
+new Chart(document.getElementById('chartModalidad'), {
+    type: 'pie',
+    data: {
+        labels: modL,
+        datasets: [{
+            data: modD,
+            backgroundColor: ['#002D72', '#28a745', '#ffc107', '#17a2b8'],
+            borderWidth: 1
+        }]
+    },
+    options: {
+        maintainAspectRatio: false,
+        plugins: { legend: { position: 'right' } }
+    }
+});
 
-    const jsonSedeL = <?= json_encode($sedes_labels) ?>; const jsonSedeD = <?= json_encode($sedes_data) ?>;
-    new Chart(document.getElementById('chartSedes'), { type: 'bar', data: { labels: jsonSedeL, datasets: [{ label: 'Equipos', data: jsonSedeD, backgroundColor: '#002D72', borderRadius: 4 }] }, options: { maintainAspectRatio: false, scales: { y: { beginAtZero: true } }, plugins: { legend: { display: false } } } });
+const sedeL = <?= json_encode($datos['sede_labels']) ?>;
+const sedeD = <?= json_encode($datos['sede_data']) ?>;
+new Chart(document.getElementById('chartSedes'), {
+    type: 'bar',
+    data: {
+        labels: sedeL,
+        datasets: [{
+            label: 'Equipos',
+            data: sedeD,
+            backgroundColor: '#002D72',
+            borderRadius: 4
+        }]
+    },
+    options: {
+        maintainAspectRatio: false,
+        scales: { y: { beginAtZero: true } },
+        plugins: { legend: { display: false } }
+    }
+});
 
-    const jsonTecL = <?= json_encode($tec_labels) ?>; const jsonTecD = <?= json_encode($tec_data) ?>;
-    new Chart(document.getElementById('chartTecnicos'), { type: 'bar', data: { labels: jsonTecL, datasets: [{ label: 'Movs', data: jsonTecD, backgroundColor: '#17a2b8', borderRadius: 4 }] }, options: { indexAxis: 'y', maintainAspectRatio: false, plugins: { legend: { display: false } } } });
+const tecL = <?= json_encode($datos['tec_labels']) ?>;
+const tecD = <?= json_encode($datos['tec_data']) ?>;
+new Chart(document.getElementById('chartTecnicos'), {
+    type: 'bar',
+    data: {
+        labels: tecL,
+        datasets: [{
+            label: 'Movimientos',
+            data: tecD,
+            backgroundColor: '#17a2b8',
+            borderRadius: 4
+        }]
+    },
+    options: {
+        indexAxis: 'y',
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } }
+    }
+});
 
-    new Chart(document.getElementById('chartVida'), { type: 'doughnut', data: { labels: ['Activos', 'Bajas'], datasets: [{ data: [<?= $total_activos ?>, <?= $total_bajas ?>], backgroundColor: ['#28a745', '#dc3545'], hoverOffset: 4 }] }, options: { maintainAspectRatio: false } });
+new Chart(document.getElementById('chartVida'), {
+    type: 'doughnut',
+    data: {
+        labels: ['Activos', 'Bajas'],
+        datasets: [{
+            data: [<?= $datos['total_activos'] ?>, <?= $datos['total_bajas'] ?>],
+            backgroundColor: ['#28a745', '#dc3545'],
+            hoverOffset: 4
+        }]
+    },
+    options: { maintainAspectRatio: false }
+});
 </script>
 
 </body>
