@@ -7,7 +7,6 @@ document.addEventListener('DOMContentLoaded', function() {
     
     const form = document.getElementById('formBaja');
     const textareaSeriales = document.querySelector('textarea[name="seriales_raw"]');
-    const inputMotivo = document.querySelector('input[name="motivo"]');
     const btnSubmit = document.querySelector('.btn-danger-submit');
 
     // ========================================================================
@@ -18,7 +17,8 @@ document.addEventListener('DOMContentLoaded', function() {
             e.preventDefault();
 
             const seriales = textareaSeriales.value.trim();
-            const motivo = inputMotivo.value.trim();
+            const motivoBaja = document.getElementById('motivo_baja').value;
+            const justificacion = document.getElementById('justificacion').value.trim();
 
             // Validar que haya seriales
             if (!seriales) {
@@ -27,10 +27,17 @@ document.addEventListener('DOMContentLoaded', function() {
                 return false;
             }
 
-            // Validar motivo
-            if (!motivo) {
+            // Validar motivo de baja
+            if (!motivoBaja) {
+                alert('⚠️ Debe seleccionar el motivo de la baja');
+                document.getElementById('motivo_baja').focus();
+                return false;
+            }
+
+            // Validar justificación
+            if (!justificacion) {
                 alert('⚠️ Debe ingresar una justificación técnica');
-                inputMotivo.focus();
+                document.getElementById('justificacion').focus();
                 return false;
             }
 
@@ -42,10 +49,12 @@ document.addEventListener('DOMContentLoaded', function() {
             const mensaje = `⚠️ CONFIRMACIÓN DE BAJA MASIVA
 
 📦 Cantidad de equipos: ${cantidadSeriales}
-📝 Motivo: ${motivo}
+🔴 Motivo: ${motivoBaja}
+📝 Justificación: ${justificacion}
 
 Esta acción:
 • Marcará ${cantidadSeriales} equipo(s) como BAJA en el sistema
+• Guardará en bitácora: "${motivoBaja} | ${justificacion}"
 • Generará un Acta de Baja automática
 • Es IRREVERSIBLE (solo Administrador puede revertir)
 
@@ -151,8 +160,17 @@ Esta acción:
         });
     }
 
-    if (inputMotivo) {
-        inputMotivo.addEventListener('input', function() {
+    const motivoBajaSelect = document.getElementById('motivo_baja');
+    const justificacionInput = document.getElementById('justificacion');
+
+    if (motivoBajaSelect) {
+        motivoBajaSelect.addEventListener('change', function() {
+            formularioModificado = this.value.length > 0;
+        });
+    }
+
+    if (justificacionInput) {
+        justificacionInput.addEventListener('input', function() {
             formularioModificado = this.value.trim().length > 0;
         });
     }

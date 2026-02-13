@@ -24,8 +24,12 @@ $error_msg = "";
 // PROCESAMIENTO DEL FORMULARIO
 // ============================================================================
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['seriales_raw'])) {
-    $motivo = trim($_POST['motivo']);
+    $motivo_baja = trim($_POST['motivo_baja']); // Select con el motivo
+    $justificacion = trim($_POST['justificacion']); // Acta/Ticket
     $tecnico = $_SESSION['nombre'];
+    
+    // Combinar para el campo desc_evento
+    $desc_evento_completo = $motivo_baja . " | " . $justificacion;
     
     // Procesar seriales
     $raw_data = $_POST['seriales_raw'];
@@ -69,7 +73,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['seriales_raw'])) {
                 $pdo->prepare("UPDATE equipos SET estado_maestro = 'Baja' WHERE serial = ?")
                     ->execute([$serial]);
                 
-                // 3. Insertar en bitácora
+                // 3. Insertar en bitácora con desc_evento completo
                 $sql_bit = "INSERT INTO bitacora (
                     serial_equipo, id_lugar, sede, ubicacion,
                     tipo_evento, correo_responsable, tecnico_responsable,
@@ -82,7 +86,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['seriales_raw'])) {
                     $sede_final, 
                     $tecnico, 
                     "LOTE:$id_lote",
-                    $motivo
+                    $desc_evento_completo // "Robo o pérdida | Acta #2026-B05"
                 ]);
                 
                 $pdo->commit();
@@ -99,7 +103,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['seriales_raw'])) {
         // Redirección si hubo éxito
         if (count($bajas_exitosas) > 0) {
             $_SESSION['acta_baja_seriales'] = $bajas_exitosas;
-            $_SESSION['acta_baja_motivo'] = $motivo;
+            $_SESSION['acta_baja_motivo'] = $motivo_baja;
+            $_SESSION['acta_baja_justificacion'] = $justificacion;
             $_SESSION['acta_baja_lote'] = $id_lote;
             $_SESSION['acta_baja_errores'] = $errores;
             
@@ -145,15 +150,29 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['seriales_raw'])) {
         <!-- Formulario -->
         <form method="POST" id="formBaja">
             
-            <!-- Motivo/Justificación -->
+            <!-- Motivo de la Baja (Select) -->
             <div class="form-group">
-                <label for="motivo">Justificación Técnica (Acta / Ticket de Mesa de Ayuda) *</label>
+                <label for="motivo_baja">Motivo de la Baja *</label>
+                <select id="motivo_baja" name="motivo_baja" required>
+                    <option value="">-- Seleccionar Motivo --</option>
+                    <option value="Robo o pérdida del equipo">Robo o pérdida del equipo</option>
+                    <option value="Daño del equipo">Daño del equipo</option>
+                    <option value="Obsolescencia del equipo">Obsolescencia del equipo</option>
+                </select>
+            </div>
+
+            <!-- Justificación Técnica (Acta/Ticket) -->
+            <div class="form-group">
+                <label for="justificacion">Justificación Técnica (Acta / Ticket) *</label>
                 <input type="text" 
-                       id="motivo"
-                       name="motivo" 
+                       id="justificacion"
+                       name="justificacion" 
                        required 
-                       placeholder="Ej: Obsolescencia Tecnológica - Acta #2026-B05" 
+                       placeholder="Ej: Acta #2026-B05, Ticket #12345" 
                        autocomplete="off">
+                <span class="hint">
+                    ℹ️ Ingrese el número de acta o ticket que respalda esta baja
+                </span>
             </div>
 
             <!-- Listado de seriales -->
