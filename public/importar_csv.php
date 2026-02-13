@@ -166,7 +166,8 @@ $exitos = 0;
 $mensaje = '';
 $delimitador_usado = ',';
 
-if (isset($_POST['importar']) && isset($_FILES['archivo_csv'])) {
+//if (isset($_POST['importar']) && isset($_FILES['archivo_csv'])) {
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['archivo_csv'])) {
     $archivo = $_FILES['archivo_csv']['tmp_name'];
     
     if (empty($archivo) || !is_uploaded_file($archivo)) {
