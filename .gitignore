@@ -1,2 +1,12 @@
-core/*.txt
-vendor/
+core/.env
+core/config.json
+core/config.json.backup_*
+core/*.backup_*
+*.log
+*.tmp
+*~
+.DS_Store
+*.ANTES
+*.BACKUP
+*.OLD
+*.NEW

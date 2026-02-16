@@ -4,7 +4,7 @@
  * Versión 4.0 - Panel de Administración Autónomo
  * Cambios: Cifrado AES-256, Validaciones, Links de Diagnóstico
  */
-require_once 'core/session.php';
+require_once '../core/session.php';
 
 // SEGURIDAD: Solo Administrador
 if (!isset($_SESSION['logged_in']) || $_SESSION['rol'] !== 'Administrador') {
@@ -13,13 +13,13 @@ if (!isset($_SESSION['logged_in']) || $_SESSION['rol'] !== 'Administrador') {
 }
 
 $msg = "";
-$configFile = 'core/config.json';
+$configFile = '../core/config.json';
 
 // Inicialización de archivos de texto legal
 $filesTxt = [
-    'txt_asign'  => 'core/acta_legal.txt',
-    'txt_baja'   => 'core/acta_baja.txt',
-    'txt_masiva' => 'core/acta_masiva.txt'
+    'txt_asign'  => '../core/acta_legal.txt',
+    'txt_baja'   => '../core/acta_baja.txt',
+    'txt_masiva' => '../core/acta_masiva.txt'
 ];
 
 if (!file_exists($filesTxt['txt_asign'])) @file_put_contents($filesTxt['txt_asign'], "El usuario declara recibir el activo en custodia...");
@@ -29,7 +29,7 @@ if (!file_exists($filesTxt['txt_masiva'])) @file_put_contents($filesTxt['txt_mas
 // PROCESAMIENTO DEL FORMULARIO
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     try {
-        require_once 'core/config_crypto.php';
+        require_once '../core/config_crypto.php';
         
         $jsonContent = @file_get_contents($configFile);
         if ($jsonContent === false) throw new Exception("No se pudo leer config.json");
@@ -75,7 +75,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         }
 
         // Auditoría
-        require_once 'core/db.php';
+        require_once '../core/db.php';
         $stmtAudit = $pdo->prepare("INSERT INTO auditoria_acceso (fecha, hora, usuario_ldap, ip_acceso, accion) VALUES (CURDATE(), CURTIME(), ?, ?, 'Modificó configuración del sistema')");
         $stmtAudit->execute([$_SESSION['usuario_id'], $_SERVER['REMOTE_ADDR']]);
 
@@ -87,7 +87,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 }
 
 // LECTURA DE VALORES ACTUALES
-require_once 'core/config_crypto.php';
+require_once '../core/config_crypto.php';
 $data = json_decode(@file_get_contents($configFile), true);
 if (!$data) $data = ['mail'=>[], 'ldap'=>[], 'db'=>[]];
 
