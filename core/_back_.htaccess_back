@@ -1,0 +1,5 @@
+# Proteger archivos de configuración y datos
+<FilesMatch "\.(json|txt|php)$">
+    Order Deny,Allow
+    Deny from all
+</FilesMatch>

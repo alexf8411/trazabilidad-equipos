@@ -1,5 +1,25 @@
-# Proteger archivos de configuración y datos
-<FilesMatch "\.(json|txt|php)$">
-    Order Deny,Allow
-    Deny from all
+# URTRACK - Protección de Archivos Sensibles
+# Ubicar en: /core/.htaccess
+
+# Bloquear acceso directo a archivos de configuración
+<Files "config.json">
+    Require all denied
+</Files>
+
+<Files ".env">
+    Require all denied
+</Files>
+
+<Files "config.json.backup_*">
+    Require all denied
+</Files>
+
+# Bloquear archivos PHP internos (no deben ser accesibles directamente)
+<FilesMatch "^(config_crypto|config_ldap|config_mail|db|session)\.php$">
+    Require all denied
+</FilesMatch>
+
+# Permitir solo archivos PHP que son puntos de entrada válidos
+<FilesMatch "^(auth|test_ldap|test_db|auth_bind|auth_query)\.php$">
+    Require all granted
 </FilesMatch>
