@@ -266,7 +266,13 @@ $cache_age = isset($_SESSION[$cache_time_key]) ? (time() - $_SESSION[$cache_time
         <a href="escaner_db.php?refresh=1" class="btn btn-primary">
             🔄 Refrescar Datos
         </a>
-        <a href="dashboard.php" class="btn btn-outline">
+        <a href="diagnostico.php" class="btn btn-outline">
+            🏥 Diagnóstico
+        </a>
+        <a href="syscheck.php" class="btn btn-outline">
+            🐧 System Check
+        </a>
+        <a href="../public/dashboard.php" class="btn btn-outline">
             ⬅ Volver al Dashboard
         </a>
     </div>

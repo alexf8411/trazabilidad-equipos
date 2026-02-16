@@ -419,7 +419,7 @@ foreach ($archivos_criticos as $path => $nombre) {
         <a href="diagnostico.php" class="btn btn-primary">🔄 Refrescar</a>
         <a href="escaner_db.php" class="btn btn-outline">🔍 Escáner BD</a>
         <a href="syscheck.php" class="btn btn-outline">🐧 System Check</a>
-        <a href="dashboard.php" class="btn btn-outline">⬅ Volver</a>
+        <a href="../public/dashboard.php" class="btn btn-outline">⬅ Volver</a>
     </div>
     
     <!-- ALERTAS CRÍTICAS -->

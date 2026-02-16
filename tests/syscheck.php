@@ -160,7 +160,9 @@ function formatSize($bytes) {
     </div>
 
     <a href="syscheck.php" class="btn btn-refresh">🔄 Re-escanear Sistema</a>
-    <a href="dashboard.php" style="display:block; text-align:center; margin-top:15px; color:#555; font-size:0.8rem; text-decoration:none;">Volver al Panel</a>
+    <a href="diagnostico.php" class="btn btn-refresh" style="margin-top:10px;">🏥 Diagnóstico</a>
+    <a href="escaner_db.php" class="btn btn-refresh" style="margin-top:10px;">🔍 Escáner BD</a>
+    <a href="../public/dashboard.php" style="display:block; text-align:center; margin-top:15px; color:#555; font-size:0.8rem; text-decoration:none;">Volver al Panel</a>
 </div>
 
 </body>
