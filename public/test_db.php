@@ -1,6 +1,6 @@
 <?php
 /**
- * test_db.php - Prueba de conexión a Base de Datos
+ * test_db.php - Prueba de conexión a Base de Datos 
  */
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
