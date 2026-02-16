@@ -2,17 +2,6 @@
 /**
  * URTRACK - Centro de Diagnóstico Seguro
  * Versión 3.0 - Solo para Administradores
- * 
- * MUESTRA:
- * ✅ Estado de servicios (sin credenciales)
- * ✅ Métricas de rendimiento
- * ✅ Alertas de seguridad
- * ✅ Recomendaciones automáticas
- * 
- * NO MUESTRA:
- * ❌ Contraseñas
- * ❌ Tokens
- * ❌ IPs internas
  */
 
 require_once '../core/db.php';
@@ -74,17 +63,15 @@ if (isset($config['ldap']['host'])) {
     $ldap_host = $config['ldap']['host'];
     $ldap_port = $config['ldap']['port'] ?? 389;
     
-    // Solo verificar conectividad (no autenticación completa)
     $conn = @ldap_connect($ldap_host, $ldap_port);
     
     if ($conn) {
         ldap_set_option($conn, LDAP_OPT_PROTOCOL_VERSION, 3);
         ldap_set_option($conn, LDAP_OPT_NETWORK_TIMEOUT, 3);
         
-        // Intentar bind anónimo (solo para verificar que el servidor responde)
         $test_bind = @ldap_bind($conn);
         
-        if ($test_bind || ldap_errno($conn) == 49) { // 49 = credenciales inválidas (pero servidor responde)
+        if ($test_bind || ldap_errno($conn) == 49) {
             $diagnostico['ldap'] = [
                 'status' => 'online',
                 'host' => $ldap_host,
@@ -115,13 +102,12 @@ if (isset($config['ldap']['host'])) {
 }
 
 // ============================================================================
-// 3. PRUEBA DE SMTP (SIN MOSTRAR CREDENCIALES)
+// 3. PRUEBA DE SMTP
 // ============================================================================
 if (isset($config['mail']['smtp_user'])) {
     $smtp_configured = !empty($config['mail']['smtp_user']) && !empty($config['mail']['smtp_pass']);
     
     if ($smtp_configured) {
-        // Solo verificar puerto abierto
         $socket = @fsockopen('smtp.office365.com', 587, $errno, $errstr, 3);
         
         if ($socket) {
@@ -158,21 +144,14 @@ if (isset($config['mail']['smtp_user'])) {
 // 4. MÉTRICAS DE BASE DE DATOS
 // ============================================================================
 try {
-    // Total de equipos
     $total_equipos = $pdo->query("SELECT COUNT(*) FROM equipos")->fetchColumn();
-    
-    // Equipos activos
     $activos = $pdo->query("SELECT COUNT(*) FROM equipos WHERE estado_maestro = 'Alta'")->fetchColumn();
+    $total_bitacora = $pdo->query("SELECT COUNT(*) FROM bitacora")->fetchColumn();
     
-    // Tamaño de bitácora
-    $stmt = $pdo->query("SELECT COUNT(*) FROM bitacora");
-    $total_bitacora = $stmt->fetchColumn();
-    
-    // Índices en bitácora
     $stmt = $pdo->query("
         SELECT COUNT(DISTINCT INDEX_NAME) as total_indices
         FROM information_schema.STATISTICS
-        WHERE table_schema = 'trazabilidad_local'
+        WHERE table_schema = DATABASE()
         AND TABLE_NAME = 'bitacora'
     ");
     $indices_bitacora = $stmt->fetchColumn();
@@ -184,7 +163,6 @@ try {
         'indices_bitacora' => $indices_bitacora
     ];
     
-    // Generar recomendaciones
     if ($total_bitacora > 100000) {
         $recomendaciones[] = [
             'tipo' => 'info',
@@ -207,58 +185,6 @@ try {
 // 5. ALERTAS DE SEGURIDAD
 // ============================================================================
 try {
-    // Equipos sin movimiento en 6+ meses (bodega)
-    $stmt = $pdo->query("
-        SELECT COUNT(DISTINCT e.serial)
-        FROM equipos e
-        LEFT JOIN LATERAL (
-            SELECT tipo_evento, fecha_evento, ubicacion
-            FROM bitacora
-            WHERE serial_equipo = e.serial
-            ORDER BY id_evento DESC
-            LIMIT 1
-        ) AS last_event ON TRUE
-        WHERE e.estado_maestro = 'Alta'
-        AND last_event.tipo_evento IN ('Devolución', 'Alta', 'Alistamiento')
-        AND last_event.ubicacion LIKE '%Bodega%'
-        AND last_event.fecha_evento < DATE_SUB(NOW(), INTERVAL 6 MONTH)
-        LIMIT 1000
-    ");
-    $equipos_estancados = $stmt->fetchColumn();
-    
-    if ($equipos_estancados > 10) {
-        $alertas[] = [
-            'tipo' => 'warning',
-            'mensaje' => "Hay {$equipos_estancados} equipos en bodega sin movimiento en 6+ meses. Revisar KPI 'Sin Movimiento'."
-        ];
-    }
-    
-    // Equipos sin compliance
-    $stmt = $pdo->query("
-        SELECT COUNT(DISTINCT e.serial)
-        FROM equipos e
-        LEFT JOIN LATERAL (
-            SELECT tipo_evento, check_dlo, check_sccm, check_antivirus
-            FROM bitacora
-            WHERE serial_equipo = e.serial
-            ORDER BY id_evento DESC
-            LIMIT 1
-        ) AS last_event ON TRUE
-        WHERE e.estado_maestro = 'Alta'
-        AND last_event.tipo_evento IN ('Asignación', 'Asignacion_Masiva')
-        AND (last_event.check_dlo = 0 OR last_event.check_sccm = 0 OR last_event.check_antivirus = 0)
-        LIMIT 1000
-    ");
-    $sin_compliance = $stmt->fetchColumn();
-    
-    if ($sin_compliance > 0) {
-        $alertas[] = [
-            'tipo' => 'danger',
-            'mensaje' => "Hay {$sin_compliance} equipos asignados SIN agentes de seguridad. Revisar KPI 'Sin Compliance'."
-        ];
-    }
-    
-    // Actividad del día
     $hoy = date('Y-m-d');
     $stmt = $pdo->prepare("SELECT COUNT(*) FROM bitacora WHERE DATE(fecha_evento) = ?");
     $stmt->execute([$hoy]);
@@ -284,6 +210,7 @@ $archivos_criticos = [
     '../core/config.json' => 'Configuración',
     '../core/db.php' => 'Conexión BD',
     '../core/session.php' => 'Seguridad',
+    '../core/config_crypto.php' => 'Módulo de Cifrado',
 ];
 
 $diagnostico['archivos'] = [];
@@ -403,6 +330,21 @@ foreach ($archivos_criticos as $path => $nombre) {
             color: var(--primary-color);
             font-weight: bold;
         }
+
+        .section-card {
+            background: white;
+            padding: 25px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+        }
+
+        .section-card h2 {
+            color: #2c3e50;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 10px;
+        }
     </style>
 </head>
 <body>
@@ -419,7 +361,7 @@ foreach ($archivos_criticos as $path => $nombre) {
         <a href="diagnostico.php" class="btn btn-primary">🔄 Refrescar</a>
         <a href="escaner_db.php" class="btn btn-outline">🔍 Escáner BD</a>
         <a href="syscheck.php" class="btn btn-outline">🐧 System Check</a>
-        <a href="../public/dashboard.php" class="btn btn-outline">⬅ Volver</a>
+        <a href="configuracion.php" class="btn btn-outline">⬅ Volver a Configuración</a>
     </div>
     
     <!-- ALERTAS CRÍTICAS -->
@@ -537,9 +479,9 @@ foreach ($archivos_criticos as $path => $nombre) {
     <?php endif; ?>
     
     <!-- Footer -->
-    <div class="alert alert-info" style="margin-top: 30px;">
-        ℹ️ <strong>Nota:</strong> Este diagnóstico no muestra credenciales ni información sensible.
-        Solo verifica el estado de los servicios.
+    <div class="alert-box info" style="margin-top: 30px;">
+        <strong>ℹ️</strong>
+        <span><strong>Nota:</strong> Este diagnóstico no muestra credenciales ni información sensible. Solo verifica el estado de los servicios.</span>
     </div>
 
 </div>

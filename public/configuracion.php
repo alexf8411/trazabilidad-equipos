@@ -338,9 +338,9 @@ $txt_masiva = file_exists($filesTxt['txt_masiva']) ? file_get_contents($filesTxt
         <div class="config-section">
             <h3>🛠️ Herramientas de Diagnóstico Avanzado</h3>
             <div class="diagnostic-links">
-                <a href="diagnostico.php" target="_blank">📊 Panel Completo de Diagnóstico</a>
-                <a href="syscheck.php" target="_blank">🔍 Revisión del Sistema</a>
-                <a href="escaner_db.php" target="_blank">🗂️ Análisis de Integridad DB</a>
+                <a href="diagnostico.php">📊 Panel Completo de Diagnóstico</a>
+                <a href="syscheck.php">🔍 Revisión del Sistema</a>
+                <a href="escaner_db.php">🗂️ Análisis de Integridad DB</a>
             </div>
         </div>
 

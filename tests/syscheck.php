@@ -2,47 +2,22 @@
 /**
  * public/syscheck.php
  * Monitor de Recursos del Servidor (Versión SEGURA)
- * SOLO Administradores desde IPs permitidas
+ * SOLO Administradores
  */
 require_once '../core/session.php';
 
-// 1. VERIFICAR ROL
+// VERIFICAR ROL
 if (!isset($_SESSION['rol']) || $_SESSION['rol'] !== 'Administrador') {
     http_response_code(403);
     die('Acceso denegado. Solo Administradores.');
 }
 
-// 2. VERIFICAR IP (OPCIONAL - Comentar si no se usa)
-/*
-$allowed_ips = ['192.168.1.0/24', '10.0.0.0/8'];
-$user_ip = $_SERVER['REMOTE_ADDR'];
-$is_allowed = false;
-
-foreach ($allowed_ips as $range) {
-    list($subnet, $bits) = explode('/', $range);
-    $ip_long = ip2long($user_ip);
-    $subnet_long = ip2long($subnet);
-    $mask = -1 << (32 - $bits);
-    if (($ip_long & $mask) == ($subnet_long & $mask)) {
-        $is_allowed = true;
-        break;
-    }
-}
-
-if (!$is_allowed) {
-    http_response_code(403);
-    die('Acceso denegado desde esta IP: ' . $user_ip);
-}
-*/
-
-// --- LÓGICA DE DIAGNÓSTICO ---
-
-// 1. DISCO DURO
+// DISCO DURO
 $disco_total = disk_total_space("/");
 $disco_libre = disk_free_space("/");
 $disco_uso_pct = round((($disco_total - $disco_libre) / $disco_total) * 100, 1);
 
-// 2. MEMORIA RAM
+// MEMORIA RAM
 $free = shell_exec('free -b');
 $free = (string)trim($free);
 $free_arr = explode("\n", $free);
@@ -52,9 +27,9 @@ $ram_total = $mem[1];
 $ram_uso = $mem[2];
 $ram_uso_pct = round(($ram_uso / $ram_total) * 100, 1);
 
-// 3. CARGA DE CPU
+// CARGA DE CPU
 $load = sys_getloadavg();
-$cpu_load = round($load[0] * 25, 1); // Ajustado para 4 núcleos
+$cpu_load = round($load[0] * 25, 1);
 $cpu_load_str = $cpu_load . "%";
 
 function formatSize($bytes) {
@@ -162,7 +137,7 @@ function formatSize($bytes) {
     <a href="syscheck.php" class="btn btn-refresh">🔄 Re-escanear Sistema</a>
     <a href="diagnostico.php" class="btn btn-refresh" style="margin-top:10px;">🏥 Diagnóstico</a>
     <a href="escaner_db.php" class="btn btn-refresh" style="margin-top:10px;">🔍 Escáner BD</a>
-    <a href="../public/dashboard.php" style="display:block; text-align:center; margin-top:15px; color:#555; font-size:0.8rem; text-decoration:none;">Volver al Panel</a>
+    <a href="configuracion.php" style="display:block; text-align:center; margin-top:15px; color:#888; font-size:0.9rem; text-decoration:none;">⬅ Volver a Configuración</a>
 </div>
 
 </body>
