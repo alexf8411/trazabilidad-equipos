@@ -1,8 +1,11 @@
 <?php
 /**
  * public/configuracion.php
- * Versión 4.0 - Panel de Administración Autónomo
- * Cambios: Cifrado AES-256, Validaciones, Links de Diagnóstico
+ * Versión 4.1 - Panel de Administración Autónomo - SQL SERVER
+ * 
+ * MIGRACIÓN SQL SERVER:
+ * ✅ Ya usaba GETDATE() correctamente en línea 103
+ * ✅ Sin cambios necesarios (código ya compatible)
  */
 require_once '../core/session.php';
 
@@ -74,7 +77,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             throw new Exception("Error de permisos al escribir archivos");
         }
 
-        // Auditoría
         // AUDITORÍA — Registrar cambio de configuración
         try {
             require_once '../core/db.php';
@@ -83,7 +85,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $usuario_rol    = $_SESSION['rol']        ?? 'Administrador';
             $ip_cliente     = $_SERVER['REMOTE_ADDR'];
             
-            // Determinar qué sección se modificó (si tienes botones específicos)
+            // Determinar qué sección se modificó
             $seccion = 'Sistema general';
             
             $pdo->prepare("INSERT INTO auditoria_cambios 
@@ -130,7 +132,7 @@ $txt_masiva = file_exists($filesTxt['txt_masiva']) ? file_get_contents($filesTxt
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Configuración del Sistema - URTRACK</title>
-    <link rel="stylesheet" href="css/urtrack-styles.css">
+    <link rel="stylesheet" href="../css/urtrack-styles.css">
     <style>
         .config-container {
             max-width: 1200px;
