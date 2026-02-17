@@ -76,6 +76,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $sql = "DELETE FROM usuarios_sistema WHERE id_usuario = ?";
             $stmt = $pdo->prepare($sql);
             $stmt->execute([$id_a_borrar]);
+
+            // AUDITORÍA — Usuario eliminado
+            try {
+                $usuario_ldap   = $_SESSION['usuario_id'] ?? 'desconocido';
+                $usuario_nombre = $_SESSION['nombre']     ?? 'Usuario sin nombre';
+                $usuario_rol    = $_SESSION['rol']        ?? 'Administrador';
+                $ip_cliente     = $_SERVER['REMOTE_ADDR'];
+                
+                $pdo->prepare("INSERT INTO auditoria_cambios 
+                    (fecha, usuario_ldap, usuario_nombre, usuario_rol, ip_origen, 
+                    tipo_accion, tabla_afectada, referencia, valor_anterior, valor_nuevo) 
+                    VALUES (NOW(), ?, ?, ?, ?, 'CAMBIO_USUARIO', 'usuarios_sistema', ?, ?, NULL)")
+                    ->execute([
+                        $usuario_ldap,
+                        $usuario_nombre,
+                        $usuario_rol,
+                        $ip_cliente,
+                        "Usuario: $correo_target",
+                        "Usuario eliminado del sistema"
+                    ]);
+            } catch (Exception $e) {
+                error_log("Fallo auditoría eliminar usuario: " . $e->getMessage());
+            }
+
             $mensaje = "<div class='alert success'>🗑️ Acceso revocado para <strong>$correo_target</strong>.</div>";
         }
     }
