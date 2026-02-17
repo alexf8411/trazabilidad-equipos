@@ -1,97 +1,100 @@
 <?php
 // --- LÓGICA DE CONTROLADOR (BACKEND) ---
-require_once '../core/session.php'; // Inicia la seguridad de sesión (Actividad 7)
-require_once '../core/auth.php';    // Trae la función de LDAP (Paso 1)
+require_once '../core/session.php';
+require_once '../core/auth.php';
 
 $error_msg = "";
 
-// Detectamos si el usuario presionó "Iniciar Sesión"
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // 1. Sanitización básica
     $user = trim($_POST['username']);
     $pass = $_POST['password'];
 
     if (!empty($user) && !empty($pass)) {
-        // 2. Llamada al Motor de Autenticación
+        
         $resultado = autenticar_usuario($user, $pass);
+        $ip_cliente = $_SERVER['REMOTE_ADDR'];
 
         if ($resultado['success']) {
 
-           // 1. SALVAMOS EL USUARIO LDAP (Antes de que db.php lo sobrescriba)
             $usuario_ldap_real = $user;
+            $nombre_ldap       = $resultado['data']['nombre'] ?? $user;
         
-            // --- PASO 1: VERIFICACIÓN DE LISTA BLANCA (RBAC) ---
-            require_once '../core/db.php'; // Conectamos a BD inmediatamente
+            // VERIFICACIÓN DE LISTA BLANCA (RBAC)
+            require_once '../core/db.php';
 
-            // Buscamos si el usuario LDAP está en nuestra tabla de permisos y está Activo
-            
-            // 1. DEFINIMOS LA CONSULTA (¡Esto faltaba!)
             $sqlRol = "SELECT id_usuario, rol, nombre_completo FROM usuarios_sistema 
                        WHERE correo_ldap = ? AND estado = 'Activo' LIMIT 1";
-
-            // 2. PREPARAMOS (Con un solo $)
             $stmtRol = $pdo->prepare($sqlRol);
-            
-            // 3. EJECUTAMOS
             $stmtRol->execute([$usuario_ldap_real]); 
             $usuarioLocal = $stmtRol->fetch();
             
             if (!$usuarioLocal) {
-                // CASO A: Autenticó en LDAP pero NO está en la lista blanca
-                // No regeneramos sesión, no auditamos acceso exitoso, solo mostramos error.
+                // CASO A: LDAP ok pero NO está autorizado en URTRACK
                 $error_msg = "Acceso denegado: El usuario '$usuario_ldap_real' no está autorizado.";
                 
+                // AUDITORÍA — Acceso denegado
+                try {
+                    $pdo->prepare("INSERT INTO auditoria_acceso 
+                        (fecha_hora, usuario_ldap, usuario_nombre, ip_acceso, resultado)
+                        VALUES (NOW(), ?, ?, ?, 'Acceso_Denegado')")
+                        ->execute([$usuario_ldap_real, $nombre_ldap, $ip_cliente]);
+                } catch (Exception $e) {
+                    error_log("Fallo auditoría acceso denegado: " . $e->getMessage());
+                }
+
             } else {
-                // CASO B: ¡AUTORIZADO TOTALMENTE! (LDAP + RBAC)
+                // CASO B: AUTORIZADO TOTALMENTE (LDAP + RBAC)
+                regenerar_sesion_segura();
                 
-                // 1. Configuración de Sesión
-                regenerar_sesion_segura(); // Anti-hijacking
-                
-                // 1. USUARIO: Usamos la variable blindada (corrección del bug appadmdb)
                 $_SESSION['usuario_id'] = $usuario_ldap_real; 
-                
-                // 2. NOMBRE: ¡CAMBIO REALIZADO! Usamos el dato directo del LDAP
-                // Esto garantiza que siempre veas el nombre oficial de la Universidad
-                $_SESSION['nombre']     = $resultado['data']['nombre']; 
-                
-                // 3. ROL: Este SÍ debe venir de la BD local
-                // (Es lo que define si ves el botón de "Gestionar Usuarios" o no)
+                $_SESSION['nombre']     = $nombre_ldap; 
                 $_SESSION['rol']        = $usuarioLocal['rol']; 
-                
-                // 4. DEPTO: También lo traemos del LDAP
                 $_SESSION['depto']      = $resultado['data']['departamento'];
-                
                 $_SESSION['logged_in']  = true;
 
-                // 2. --- TU AUDITORÍA ORIGINAL (INTEGRADA AQUÍ) ---
+                // AUDITORÍA — Login exitoso
                 try {
-                    // Nota: Ya no hacemos require_once '../core/db.php' porque lo hicimos arriba
-                    
-                    $sqlAudit = "INSERT INTO auditoria_acceso (fecha, hora, usuario_ldap, ip_acceso) 
-                                 VALUES (CURDATE(), CURTIME(), ?, ?)";
-                    
-                    $stmtAudit = $pdo->prepare($sqlAudit);
-                    
-                    $stmtAudit->execute([
-                        $_SESSION['usuario_id'],
-                        $_SERVER['REMOTE_ADDR']
-                    ]);
-                    
+                    $pdo->prepare("INSERT INTO auditoria_acceso 
+                        (fecha_hora, usuario_ldap, usuario_nombre, ip_acceso, resultado)
+                        VALUES (NOW(), ?, ?, ?, 'Login_Exitoso')")
+                        ->execute([$usuario_ldap_real, $nombre_ldap, $ip_cliente]);
                 } catch (Exception $e) {
-                    // Log de error silencioso
-                    error_log("Fallo al registrar auditoría de acceso: " . $e->getMessage());
+                    error_log("Fallo auditoría login exitoso: " . $e->getMessage());
                 }
-                // --- FIN AUDITORÍA ---
 
-                // 3. Redirección
                 header("Location: dashboard.php");
                 exit;
             }
 
         } else {
-            // Fallo LDAP (Contraseña incorrecta, usuario no existe, etc.)
-            $error_msg = $resultado['message'];
+            // CASO C: Fallo en LDAP — clasificar por tipo
+            $error_msg  = $resultado['message'];
+            $error_code = $resultado['error_code'] ?? 'OTRO';
+
+            // Determinar tipo de resultado para auditoría
+            if ($error_code === '775') {
+                $resultado_auditoria = 'Cuenta_Bloqueada';
+            } elseif ($error_code === '532') {
+                $resultado_auditoria = 'Password_Expirado';
+            } else {
+                // 52e = contraseña incorrecta, OTRO = error desconocido
+                $resultado_auditoria = 'Login_Fallido';
+            }
+
+            // AUDITORÍA — Fallo de login
+            // Aquí no tenemos nombre porque LDAP no autenticó
+            // Solo guardamos lo que el usuario escribió en el formulario
+            try {
+                require_once '../core/db.php';
+                $pdo->prepare("INSERT INTO auditoria_acceso 
+                    (fecha_hora, usuario_ldap, usuario_nombre, ip_acceso, resultado)
+                    VALUES (NOW(), ?, NULL, ?, ?)")
+                    ->execute([$user, $ip_cliente, $resultado_auditoria]);
+            } catch (Exception $e) {
+                error_log("Fallo auditoría login fallido: " . $e->getMessage());
+            }
         }
+
     } else {
         $error_msg = "Por favor completa todos los campos.";
     }
