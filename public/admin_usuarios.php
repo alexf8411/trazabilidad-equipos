@@ -2,6 +2,10 @@
 /**
  * public/admin_usuarios.php
  * Gestión de usuarios con protección de auto-eliminación
+ * Versión 2.1 SQL SERVER
+ * 
+ * MIGRACIÓN SQL SERVER:
+ * ✅ NOW() → GETDATE() (2 instancias en auditoría)
  */
 require_once '../core/session.php';
 require_once '../core/db.php';
@@ -38,7 +42,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $pdo->prepare("INSERT INTO auditoria_cambios 
                 (fecha, usuario_ldap, usuario_nombre, usuario_rol, ip_origen, 
                 tipo_accion, tabla_afectada, referencia, valor_anterior, valor_nuevo) 
-                VALUES (NOW(), ?, ?, ?, ?, 'CAMBIO_USUARIO', 'usuarios_sistema', ?, NULL, ?)")
+                VALUES (GETDATE(), ?, ?, ?, ?, 'CAMBIO_USUARIO', 'usuarios_sistema', ?, NULL, ?)")
                 ->execute([
                     $usuario_ldap,
                     $usuario_nombre,
@@ -87,7 +91,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $pdo->prepare("INSERT INTO auditoria_cambios 
                     (fecha, usuario_ldap, usuario_nombre, usuario_rol, ip_origen, 
                     tipo_accion, tabla_afectada, referencia, valor_anterior, valor_nuevo) 
-                    VALUES (NOW(), ?, ?, ?, ?, 'CAMBIO_USUARIO', 'usuarios_sistema', ?, ?, NULL)")
+                    VALUES (GETDATE(), ?, ?, ?, ?, 'CAMBIO_USUARIO', 'usuarios_sistema', ?, ?, NULL)")
                     ->execute([
                         $usuario_ldap,
                         $usuario_nombre,
