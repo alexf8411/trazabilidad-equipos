@@ -42,8 +42,8 @@ $msg = "";
 function obtenerBodega($pdo) {
     // Cachear en sesión para evitar query repetida
     if (!isset($_SESSION['bodega_cache'])) {
-        // Query EXACTA sin LIKE peligroso
-        $stmt = $pdo->prepare("SELECT id, sede, nombre FROM lugares WHERE nombre = ? LIMIT 1");
+        // Solo necesitamos el ID — sede y nombre ya no se guardan en bitácora
+        $stmt = $pdo->prepare("SELECT id FROM lugares WHERE nombre = ? LIMIT 1");
         $stmt->execute(['Bodega de Tecnología']);
         $bodega = $stmt->fetch(PDO::FETCH_ASSOC);
         
@@ -112,17 +112,15 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
             // B. INSERTAR EN BITÁCORA (Evento de Alta)
             $sql_bitacora = "INSERT INTO bitacora (
-                                serial_equipo, id_lugar, sede, ubicacion, 
+                                serial_equipo, id_lugar,
                                 tipo_evento, correo_responsable, fecha_evento, 
                                 tecnico_responsable, hostname, desc_evento, check_sccm
-                              ) VALUES (?, ?, ?, ?, 'Alta', ?, NOW(), ?, ?, ?, 0)";
+                              ) VALUES (?, ?, 'Alta', ?, NOW(), ?, ?, ?, 0)";
             
             $stmt_b = $pdo->prepare($sql_bitacora);
             $stmt_b->execute([
                 $serial, 
-                $bodega['id'], 
-                $bodega['sede'], 
-                $bodega['nombre'],
+                $bodega['id'],
                 $usuario_autenticado,  // Responsable es el usuario autenticado
                 $tecnico_nombre,
                 $serial,               // Hostname inicial = Serial
