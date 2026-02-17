@@ -76,15 +76,37 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
         // D. GUARDAR LOG DE AUDITORÍA
         if (!empty($cambios_detectados)) {
-            $resumen_cambios = implode(" | ", $cambios_detectados);
             $ip_cliente = $_SERVER['REMOTE_ADDR'];
-            //$responsable = $_SESSION['correo_ldap'] ?? 'Admin'; // Ajustado a tu sesión real
-            $responsable = $_SESSION['correo'] ?? $_SESSION['usuario_id'] ?? 'Admin_Directo'; // CORRECCIÓN:
+            
+            // Capturar datos del usuario desde sesión
+            $usuario_ldap   = $_SESSION['usuario_id'] ?? 'desconocido';
+            $usuario_nombre = $_SESSION['nombre']     ?? 'Usuario sin nombre';
+            $usuario_rol    = $_SESSION['rol']        ?? 'Recursos';
+            
+            // Construir valores anterior y nuevo estructurados
+            $cambios_array = [];
+            foreach ($cambios_detectados as $cambio) {
+                $cambios_array[] = $cambio;
+            }
+            
+            $valor_anterior = "Placa: $placa_original, Serial: $serial_original";
+            $valor_nuevo    = "Placa: $nueva_placa, Serial: $nuevo_serial";
 
-            $sql_audit = "INSERT INTO auditoria_cambios (usuario_responsable, tipo_accion, referencia, detalles, ip_origen, fecha) 
-                          VALUES (?, 'EDICION MAESTRA', ?, ?, ?, NOW())";
+            $sql_audit = "INSERT INTO auditoria_cambios 
+                (fecha, usuario_ldap, usuario_nombre, usuario_rol, ip_origen, 
+                 tipo_accion, tabla_afectada, referencia, valor_anterior, valor_nuevo) 
+                VALUES (NOW(), ?, ?, ?, ?, 'EDICION_EQUIPO', 'equipos', ?, ?, ?)";
+            
             $stmt_audit = $pdo->prepare($sql_audit);
-            $stmt_audit->execute([$responsable, "Equipo: $nueva_placa", $resumen_cambios, $ip_cliente]);
+            $stmt_audit->execute([
+                $usuario_ldap,
+                $usuario_nombre,
+                $usuario_rol,
+                $ip_cliente,
+                "Equipo: $nueva_placa",
+                $valor_anterior,
+                $valor_nuevo
+            ]);
         }
 
         $pdo->commit();
