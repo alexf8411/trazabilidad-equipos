@@ -28,7 +28,7 @@ $columnas_permitidas = [
     'serial'     => 'e.serial',
     'marca'      => 'e.marca',
     'fecha'      => 'e.fecha_compra',
-    'ubicacion'  => 'last_event.ubicacion',
+    'ubicacion'  => 'l.nombre',
     'responsable'=> 'last_event.correo_responsable',
     'estado'     => 'e.estado_maestro'
 ];
@@ -94,7 +94,7 @@ try {
     $total_paginas = max(1, ceil($total / $por_pagina));
 
     // QUERY PRINCIPAL OPTIMIZADA
-    // Usa LATERAL JOIN para obtener solo el último evento de cada equipo mostrado
+    // sede y nombre vienen de tabla lugares via JOIN
     $sql_data = "
         SELECT 
             e.id_equipo,
@@ -106,19 +106,20 @@ try {
             e.fecha_compra,
             e.modalidad,
             e.estado_maestro,
-            last_event.sede,
-            last_event.ubicacion,
+            l.sede,
+            l.nombre AS ubicacion,
             last_event.tipo_evento,
             last_event.correo_responsable,
             last_event.hostname
         FROM equipos e
         LEFT JOIN LATERAL (
-            SELECT sede, ubicacion, tipo_evento, correo_responsable, hostname
+            SELECT id_lugar, tipo_evento, correo_responsable, hostname
             FROM bitacora
             WHERE serial_equipo = e.serial
             ORDER BY id_evento DESC
             LIMIT 1
         ) AS last_event ON TRUE
+        LEFT JOIN lugares l ON last_event.id_lugar = l.id
         $filtro_where
         ORDER BY $columna_orden $orden_dir
         LIMIT :limit OFFSET :offset
@@ -240,8 +241,8 @@ if (isset($_GET['status'])) {
                                 </td>
 
                                 <td data-label="Ubicación">
-                                    <?php if ($eq['ubicacion']): ?>
-                                        <strong><?= htmlspecialchars($eq['sede']) ?></strong><br>
+                                    <?php if (!empty($eq['ubicacion'])): ?>
+                                        <strong><?= htmlspecialchars($eq['sede'] ?? '') ?></strong><br>
                                         <small><?= htmlspecialchars($eq['ubicacion']) ?></small>
                                     <?php else: ?>
                                         <span class="text-muted">Sin movimientos</span>
