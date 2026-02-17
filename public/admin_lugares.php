@@ -47,6 +47,30 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         if ($action == 'add' && !empty($nombre)) {
             $stmt = $pdo->prepare("INSERT INTO lugares (sede, nombre, estado) VALUES (?, ?, 1)");
             $stmt->execute([$sede, $nombre]);
+
+            // AUDITORÍA — Nuevo lugar creado
+            try {
+                $usuario_ldap   = $_SESSION['usuario_id'] ?? 'desconocido';
+                $usuario_nombre = $_SESSION['nombre']     ?? 'Usuario sin nombre';
+                $usuario_rol    = $_SESSION['rol']        ?? 'Administrador';
+                $ip_cliente     = $_SERVER['REMOTE_ADDR'];
+                
+                $pdo->prepare("INSERT INTO auditoria_cambios 
+                    (fecha, usuario_ldap, usuario_nombre, usuario_rol, ip_origen, 
+                    tipo_accion, tabla_afectada, referencia, valor_anterior, valor_nuevo) 
+                    VALUES (NOW(), ?, ?, ?, ?, 'CAMBIO_LUGAR', 'lugares', ?, NULL, ?)")
+                    ->execute([
+                        $usuario_ldap,
+                        $usuario_nombre,
+                        $usuario_rol,
+                        $ip_cliente,
+                        "Lugar: $nombre",
+                        "Nuevo lugar creado - Sede: $sede"
+                    ]);
+            } catch (Exception $e) {
+                error_log("Fallo auditoría crear lugar: " . $e->getMessage());
+            }
+
             // REDIRECCIÓN: Limpia el formulario
             header("Location: admin_lugares.php?status=created");
             exit;
@@ -55,6 +79,30 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $id = $_POST['id'];
             $stmt = $pdo->prepare("UPDATE lugares SET sede = ?, nombre = ? WHERE id = ?");
             $stmt->execute([$sede, $nombre, $id]);
+
+            // AUDITORÍA — Lugar editado
+            try {
+                $usuario_ldap   = $_SESSION['usuario_id'] ?? 'desconocido';
+                $usuario_nombre = $_SESSION['nombre']     ?? 'Usuario sin nombre';
+                $usuario_rol    = $_SESSION['rol']        ?? 'Administrador';
+                $ip_cliente     = $_SERVER['REMOTE_ADDR'];
+                
+                $pdo->prepare("INSERT INTO auditoria_cambios 
+                    (fecha, usuario_ldap, usuario_nombre, usuario_rol, ip_origen, 
+                    tipo_accion, tabla_afectada, referencia, valor_anterior, valor_nuevo) 
+                    VALUES (NOW(), ?, ?, ?, ?, 'CAMBIO_LUGAR', 'lugares', ?, NULL, ?)")
+                    ->execute([
+                        $usuario_ldap,
+                        $usuario_nombre,
+                        $usuario_rol,
+                        $ip_cliente,
+                        "Lugar ID: $id",
+                        "Lugar actualizado: $sede - $nombre"
+                    ]);
+            } catch (Exception $e) {
+                error_log("Fallo auditoría editar lugar: " . $e->getMessage());
+            }
+
             // REDIRECCIÓN: Saca al usuario del modo edición
             header("Location: admin_lugares.php?status=updated");
             exit;
@@ -73,6 +121,30 @@ if (isset($_GET['action'])) {
         try {
             $stmt = $pdo->prepare("DELETE FROM lugares WHERE id = ?");
             $stmt->execute([$id]);
+
+            // AUDITORÍA — Lugar eliminado
+            try {
+                $usuario_ldap   = $_SESSION['usuario_id'] ?? 'desconocido';
+                $usuario_nombre = $_SESSION['nombre']     ?? 'Usuario sin nombre';
+                $usuario_rol    = $_SESSION['rol']        ?? 'Administrador';
+                $ip_cliente     = $_SERVER['REMOTE_ADDR'];
+                
+                $pdo->prepare("INSERT INTO auditoria_cambios 
+                    (fecha, usuario_ldap, usuario_nombre, usuario_rol, ip_origen, 
+                    tipo_accion, tabla_afectada, referencia, valor_anterior, valor_nuevo) 
+                    VALUES (NOW(), ?, ?, ?, ?, 'CAMBIO_LUGAR', 'lugares', ?, ?, NULL)")
+                    ->execute([
+                        $usuario_ldap,
+                        $usuario_nombre,
+                        $usuario_rol,
+                        $ip_cliente,
+                        "Lugar ID: $id",
+                        "Lugar eliminado del sistema"
+                    ]);
+            } catch (Exception $e) {
+                error_log("Fallo auditoría eliminar lugar: " . $e->getMessage());
+            }
+
             header("Location: admin_lugares.php?status=deleted");
             exit;
         } catch (PDOException $e) {

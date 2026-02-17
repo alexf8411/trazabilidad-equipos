@@ -75,9 +75,32 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         }
 
         // Auditoría
-        require_once '../core/db.php';
-        $stmtAudit = $pdo->prepare("INSERT INTO auditoria_acceso (fecha, hora, usuario_ldap, ip_acceso, accion) VALUES (CURDATE(), CURTIME(), ?, ?, 'Modificó configuración del sistema')");
-        $stmtAudit->execute([$_SESSION['usuario_id'], $_SERVER['REMOTE_ADDR']]);
+        // AUDITORÍA — Registrar cambio de configuración
+        try {
+            require_once '../core/db.php';
+            $usuario_ldap   = $_SESSION['usuario_id'] ?? 'desconocido';
+            $usuario_nombre = $_SESSION['nombre']     ?? 'Usuario sin nombre';
+            $usuario_rol    = $_SESSION['rol']        ?? 'Administrador';
+            $ip_cliente     = $_SERVER['REMOTE_ADDR'];
+            
+            // Determinar qué sección se modificó (si tienes botones específicos)
+            $seccion = 'Sistema general';
+            
+            $pdo->prepare("INSERT INTO auditoria_cambios 
+                (fecha, usuario_ldap, usuario_nombre, usuario_rol, ip_origen, 
+                tipo_accion, tabla_afectada, referencia, valor_anterior, valor_nuevo) 
+                VALUES (NOW(), ?, ?, ?, ?, 'CAMBIO_CONFIGURACION', 'config', ?, NULL, ?)")
+                ->execute([
+                    $usuario_ldap,
+                    $usuario_nombre,
+                    $usuario_rol,
+                    $ip_cliente,
+                    "Configuración: $seccion",
+                    "Configuración modificada"
+                ]);
+        } catch (Exception $e) {
+            error_log("Fallo auditoría config: " . $e->getMessage());
+        }
 
         $msg = "<div class='alert success'>✅ Configuración actualizada y cifrada correctamente.</div>";
 

@@ -302,6 +302,32 @@ function procesarBatch($pdo, $equipos, $bodega, &$exitos, &$errores) {
         $errores[] = "Error en lote: " . $e->getMessage();
     }
 }
+
+// AUDITORÍA — Registrar importación masiva (solo si hubo éxitos)
+if ($exitos > 0) {
+    try {
+        require_once '../core/db.php';
+        $usuario_ldap   = $_SESSION['usuario_id'] ?? 'desconocido';
+        $usuario_nombre = $_SESSION['nombre']     ?? 'Usuario sin nombre';
+        $usuario_rol    = $_SESSION['rol']        ?? 'Recursos';
+        $ip_cliente     = $_SERVER['REMOTE_ADDR'];
+        
+        $pdo->prepare("INSERT INTO auditoria_cambios 
+            (fecha, usuario_ldap, usuario_nombre, usuario_rol, ip_origen, 
+             tipo_accion, tabla_afectada, referencia, valor_anterior, valor_nuevo) 
+            VALUES (NOW(), ?, ?, ?, ?, 'IMPORTACION_CSV', 'equipos', ?, NULL, ?)")
+            ->execute([
+                $usuario_ldap,
+                $usuario_nombre,
+                $usuario_rol,
+                $ip_cliente,
+                "Importación masiva: $exitos equipos",
+                "Total: $exitos equipos procesados"
+            ]);
+    } catch (Exception $e) {
+        error_log("Fallo auditoría importación: " . $e->getMessage());
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="es">
