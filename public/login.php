@@ -17,11 +17,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // PASO 1: Verificar si el usuario está en la lista blanca ANTES de intentar LDAP
         require_once '../core/db.php';
         
-        $sqlRol = "SELECT id_usuario, rol, nombre_completo FROM usuarios_sistema 
-                   WHERE correo_ldap = ? AND estado = 'Activo' LIMIT 1";
-        $stmtRol = $pdo->prepare($sqlRol);
-        $stmtRol->execute([$login_user]); 
-        $usuarioLocal = $stmtRol->fetch();
+        try {
+            // Migración a MS SQL: Se usa TOP 1 en lugar de LIMIT 1
+            $sqlRol = "SELECT TOP 1 id_usuario, rol, nombre_completo FROM usuarios_sistema 
+                       WHERE correo_ldap = ? AND estado = 'Activo'";
+            $stmtRol = $pdo->prepare($sqlRol);
+            $stmtRol->execute([$login_user]); 
+            $usuarioLocal = $stmtRol->fetch();
+        } catch (Exception $e) {
+            // Si hay un error de sintaxis SQL, no explota, lo mostramos en pantalla.
+            $error_msg = "Error en base de datos: " . $e->getMessage();
+            $usuarioLocal = false; // Forzamos a que no entre
+        }
         
         if (!$usuarioLocal) {
             // Usuario NO está en la lista blanca de URTRACK
