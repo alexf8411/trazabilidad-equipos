@@ -1,6 +1,6 @@
 <?php
 /**
- * public/generar_acta.php
+ * public/generar_acta.php 
  * Generación de Acta PDF: Visualizar, Enviar por Correo y Descargar
  */
 require_once '../core/db.php';
@@ -19,14 +19,14 @@ $serial = $_GET['serial'];
 $action = $_GET['action'] ?? 'view';
 
 // 2. OBTENER DATOS — sede y nombre vienen de tabla lugares via JOIN
-$sql = "SELECT e.*, b.*,
+$sql = "SELECT TOP 1 e.*, b.*,
                l.sede AS sede_lugar,
                l.nombre AS nombre_lugar
         FROM equipos e
         JOIN bitacora b ON e.serial = b.serial_equipo
         LEFT JOIN lugares l ON b.id_lugar = l.id
         WHERE e.serial = ? 
-        ORDER BY b.id_evento DESC LIMIT 1";
+        ORDER BY b.id_evento DESC";
 
 $stmt = $pdo->prepare($sql);
 $stmt->execute([$serial]);

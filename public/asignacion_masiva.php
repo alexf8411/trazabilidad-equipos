@@ -1,6 +1,6 @@
 <?php
 /**
- * URTRACK - Asignación Masiva  
+ * URTRACK - Asignación Masiva 
  * Versión 3.0 OPTIMIZADA
  * 
  * OPTIMIZACIONES:
@@ -289,7 +289,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirm_save'])) {
             correo_responsable, responsable_secundario,
             tecnico_responsable, hostname, fecha_evento,
             check_dlo, check_antivirus, check_sccm
-        ) VALUES (?, ?, ?, ?, 'Asignacion_Masiva', ?, ?, ?, ?, NOW(), ?, ?, ?)";
+        ) VALUES (?, ?, ?, ?, 'Asignacion_Masiva', ?, ?, ?, ?, GETDATE(), ?, ?, ?)";
         
         $stmt = $pdo->prepare($sql);
         

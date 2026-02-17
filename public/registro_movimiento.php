@@ -1,6 +1,6 @@
 <?php
 /**
- * URTRACK - Registro de Movimiento (Asignación y Traslados)
+ * URTRACK - Registro de Movimiento (Asignación y Traslados) 
  * Versión 3.0 OPTIMIZADA
  * 
  * OPTIMIZACIONES:
@@ -38,22 +38,20 @@ if (isset($_GET['buscar']) && !empty($_GET['criterio'])) {
     
     // QUERY OPTIMIZADA CON LATERAL JOIN
     // sede y ubicacion ahora vienen de tabla lugares via JOIN
-    $sql_buscar = "SELECT e.*, 
+    $sql_buscar = "SELECT TOP 1 e.*, 
                    last_event.correo_responsable AS responsable_actual,
                    last_event.id_lugar AS id_lugar_actual,
                    l.nombre AS ubicacion_actual, 
                    l.sede AS sede_actual
                    FROM equipos e
-                   LEFT JOIN LATERAL (
-                       SELECT correo_responsable, id_lugar
+                   OUTER APPLY (
+                       SELECT TOP 1 correo_responsable, id_lugar
                        FROM bitacora
                        WHERE serial_equipo = e.serial
                        ORDER BY id_evento DESC
-                       LIMIT 1
-                   ) AS last_event ON TRUE
+                   ) AS last_event
                    LEFT JOIN lugares l ON last_event.id_lugar = l.id
-                   WHERE e.placa_ur = ? OR e.serial = ? 
-                   LIMIT 1";
+                   WHERE e.placa_ur = ? OR e.serial = ?";
                    
     $stmt = $pdo->prepare($sql_buscar);
     $stmt->execute([$criterio, $criterio]);
@@ -100,7 +98,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirmar'])) {
                     tipo_evento, correo_responsable, responsable_secundario, tecnico_responsable, 
                     hostname, fecha_evento,
                     check_dlo, check_antivirus, check_sccm
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?, ?)";
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, GETDATE(), ?, ?, ?)";
         
         $pdo->prepare($sql)->execute([
             $_POST['serial'], 

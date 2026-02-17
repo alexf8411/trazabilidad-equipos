@@ -1,6 +1,6 @@
 <?php
 /**
- * URTRACK - Baja Masiva de Equipos
+ * URTRACK - Baja Masiva de Equipos 
  * Versión 3.0 OPTIMIZADA
  * 
  * OPTIMIZACIONES:
@@ -44,7 +44,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['seriales_raw'])) {
         $id_lote = date('YmdHis') . '-' . rand(100,999);
         
         // Buscar lugar de destino (Bodega) — query exacta, sin LIKE peligroso
-        $stmt_lugar = $pdo->prepare("SELECT id FROM lugares WHERE nombre = ? LIMIT 1");
+        $stmt_lugar = $pdo->prepare("SELECT TOP 1 id FROM lugares WHERE nombre = ?");
         $stmt_lugar->execute(['Bodega de Tecnología']);
         $lugar_defecto = $stmt_lugar->fetch(PDO::FETCH_ASSOC);
 
@@ -89,7 +89,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['seriales_raw'])) {
                     $pdo->prepare("INSERT INTO auditoria_cambios 
                         (fecha, usuario_ldap, usuario_nombre, usuario_rol, ip_origen, 
                         tipo_accion, tabla_afectada, referencia, valor_anterior, valor_nuevo) 
-                        VALUES (NOW(), ?, ?, ?, ?, 'BAJA_EQUIPO', 'equipos', ?, 'Alta', 'Baja')")
+                        VALUES (GETDATE(), ?, ?, ?, ?, 'BAJA_EQUIPO', 'equipos', ?, 'Alta', 'Baja')")
                         ->execute([
                             $usuario_ldap,
                             $usuario_nombre,
@@ -106,7 +106,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['seriales_raw'])) {
                     serial_equipo, id_lugar,
                     tipo_evento, correo_responsable, tecnico_responsable,
                     hostname, fecha_evento, desc_evento
-                ) VALUES (?, ?, 'Baja', 'Activos Fijos', ?, ?, NOW(), ?)";
+                ) VALUES (?, ?, 'Baja', 'Activos Fijos', ?, ?, GETDATE(), ?)";
                 
                 $pdo->prepare($sql_bit)->execute([
                     $serial, 
