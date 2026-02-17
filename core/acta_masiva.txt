@@ -1,1 +1,1 @@
-El funcionario a cargo certifica la entrega/recepción del equipo en las condiciones descritas y en estado operativo. La transacción ha sido registrada y queda auditada en el sistema URTRACK, integrando el movimiento al historial oficial del activo.
+El funcionario a cargo certifica la entrega/recepción de los equipos en las condiciones descritas y en estado operativo, la transacción ha sido registrada y queda auditada en el sistema URTRACK, integrando el movimiento al historial oficial del activo.
