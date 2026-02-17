@@ -61,9 +61,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['seriales_raw'])) {
                 $pdo->beginTransaction();
                 
                 // 1. Validar que existe y no está de baja
-                $stmt_check = $pdo->prepare("SELECT estado_maestro FROM equipos WHERE serial = ?");
+                $stmt_check = $pdo->prepare("SELECT placa_ur, estado_maestro FROM equipos WHERE serial = ?");
                 $stmt_check->execute([$serial]);
                 $equipo = $stmt_check->fetch();
+
+                $placa_ur = $equipo['placa_ur'] ?? $serial; // Extraer placa para auditoría
                 
                 if (!$equipo) {
                     throw new Exception("No existe en DB");
