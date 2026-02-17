@@ -2,6 +2,11 @@
 /**
  * public/admin_lugares.php
  * Gestión Maestra de Ubicaciones - UX Mejorada (Post-Redirect-Get)
+ * Versión 2.1 SQL SERVER
+ * 
+ * MIGRACIÓN SQL SERVER:
+ * ✅ NOW() → GETDATE() (3 instancias en auditoría)
+ * ✅ JavaScript extraído a admin_lugares.js
  */
 require_once '../core/db.php';
 require_once '../core/session.php';
@@ -58,7 +63,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 $pdo->prepare("INSERT INTO auditoria_cambios 
                     (fecha, usuario_ldap, usuario_nombre, usuario_rol, ip_origen, 
                     tipo_accion, tabla_afectada, referencia, valor_anterior, valor_nuevo) 
-                    VALUES (NOW(), ?, ?, ?, ?, 'CAMBIO_LUGAR', 'lugares', ?, NULL, ?)")
+                    VALUES (GETDATE(), ?, ?, ?, ?, 'CAMBIO_LUGAR', 'lugares', ?, NULL, ?)")
                     ->execute([
                         $usuario_ldap,
                         $usuario_nombre,
@@ -90,7 +95,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 $pdo->prepare("INSERT INTO auditoria_cambios 
                     (fecha, usuario_ldap, usuario_nombre, usuario_rol, ip_origen, 
                     tipo_accion, tabla_afectada, referencia, valor_anterior, valor_nuevo) 
-                    VALUES (NOW(), ?, ?, ?, ?, 'CAMBIO_LUGAR', 'lugares', ?, NULL, ?)")
+                    VALUES (GETDATE(), ?, ?, ?, ?, 'CAMBIO_LUGAR', 'lugares', ?, NULL, ?)")
                     ->execute([
                         $usuario_ldap,
                         $usuario_nombre,
@@ -132,7 +137,7 @@ if (isset($_GET['action'])) {
                 $pdo->prepare("INSERT INTO auditoria_cambios 
                     (fecha, usuario_ldap, usuario_nombre, usuario_rol, ip_origen, 
                     tipo_accion, tabla_afectada, referencia, valor_anterior, valor_nuevo) 
-                    VALUES (NOW(), ?, ?, ?, ?, 'CAMBIO_LUGAR', 'lugares', ?, ?, NULL)")
+                    VALUES (GETDATE(), ?, ?, ?, ?, 'CAMBIO_LUGAR', 'lugares', ?, ?, NULL)")
                     ->execute([
                         $usuario_ldap,
                         $usuario_nombre,
@@ -159,7 +164,7 @@ if (isset($_GET['action'])) {
     
     // TOGGLE ESTADO
     if ($_GET['action'] == 'toggle') {
-        $stmt = $pdo->prepare("UPDATE lugares SET estado = NOT estado WHERE id = ?");
+        $stmt = $pdo->prepare("UPDATE lugares SET estado = CASE WHEN estado = 1 THEN 0 ELSE 1 END WHERE id = ?");
         $stmt->execute([$id]);
         header("Location: admin_lugares.php"); // Recarga simple
         exit;
@@ -380,23 +385,8 @@ $lugares = $pdo->query("SELECT * FROM lugares ORDER BY sede ASC, nombre ASC")->f
 
 </div>
 
-<script>
-function filterTable() {
-    let input = document.getElementById("searchInput");
-    let filter = input.value.toUpperCase();
-    let table = document.getElementById("lugaresTable");
-    let tr = table.getElementsByTagName("tr");
-
-    for (let i = 1; i < tr.length; i++) {
-        let tdSede = tr[i].getElementsByTagName("td")[0];
-        let tdNombre = tr[i].getElementsByTagName("td")[1];
-        if (tdSede || tdNombre) {
-            let txtValue = (tdSede.textContent || tdSede.innerText) + " " + (tdNombre.textContent || tdNombre.innerText);
-            tr[i].style.display = txtValue.toUpperCase().indexOf(filter) > -1 ? "" : "none";
-        }
-    }
-}
-</script>
+<!-- JavaScript extraído a archivo separado -->
+<script src="js/admin_lugares.js"></script>
 
 </body>
 </html>
