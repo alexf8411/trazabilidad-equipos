@@ -37,18 +37,21 @@ if (isset($_GET['buscar']) && !empty($_GET['criterio'])) {
     $criterio = trim($_GET['criterio']);
     
     // QUERY OPTIMIZADA CON LATERAL JOIN
+    // sede y ubicacion ahora vienen de tabla lugares via JOIN
     $sql_buscar = "SELECT e.*, 
-                   last_event.correo_responsable AS responsable_actual, 
-                   last_event.ubicacion AS ubicacion_actual, 
-                   last_event.sede AS sede_actual
+                   last_event.correo_responsable AS responsable_actual,
+                   last_event.id_lugar AS id_lugar_actual,
+                   l.nombre AS ubicacion_actual, 
+                   l.sede AS sede_actual
                    FROM equipos e
                    LEFT JOIN LATERAL (
-                       SELECT correo_responsable, ubicacion, sede
+                       SELECT correo_responsable, id_lugar
                        FROM bitacora
                        WHERE serial_equipo = e.serial
                        ORDER BY id_evento DESC
                        LIMIT 1
                    ) AS last_event ON TRUE
+                   LEFT JOIN lugares l ON last_event.id_lugar = l.id
                    WHERE e.placa_ur = ? OR e.serial = ? 
                    LIMIT 1";
                    
@@ -72,12 +75,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirmar'])) {
     try {
         $pdo->beginTransaction();
         
-        // Obtener datos del lugar
-        $stmt_l = $pdo->prepare("SELECT sede, nombre FROM lugares WHERE id = ?");
+        // Validar que el lugar existe
+        $stmt_l = $pdo->prepare("SELECT id FROM lugares WHERE id = ?");
         $stmt_l->execute([$_POST['id_lugar']]);
         $lugar = $stmt_l->fetch();
 
-        // Validar que el lugar existe
         if (!$lugar) {
             throw new Exception("Ubicación destino no válida");
         }
@@ -91,25 +93,23 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirmar'])) {
         $no_caso = trim($_POST['no_caso']);
         $desc_evento = "Caso: " . $no_caso;
 
-        // Insertar en bitácora
+        // Insertar en bitácora — sede y ubicacion ya no se guardan, se leen de tabla lugares
         $sql = "INSERT INTO bitacora (
-                    serial_equipo, id_lugar, sede, ubicacion, 
+                    serial_equipo, id_lugar,
                     campo_adic1, desc_evento,
                     tipo_evento, correo_responsable, responsable_secundario, tecnico_responsable, 
                     hostname, fecha_evento,
                     check_dlo, check_antivirus, check_sccm
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?, ?)";
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?, ?)";
         
         $pdo->prepare($sql)->execute([
             $_POST['serial'], 
-            $_POST['id_lugar'], 
-            $lugar['sede'], 
-            $lugar['nombre'],
-            $_POST['comentarios'] ?: null,  // Campo opcional
-            $desc_evento,                    // "Caso: 12345"
+            $_POST['id_lugar'],
+            $_POST['comentarios'] ?: null,
+            $desc_evento,
             $_POST['tipo_evento'], 
-            $_POST['correo_resp_real'],      // Principal
-            $_POST['correo_sec_real'] ?: null, // Secundario (opcional)
+            $_POST['correo_resp_real'],
+            $_POST['correo_sec_real'] ?: null,
             $_SESSION['nombre'], 
             strtoupper($_POST['hostname']),
             $check_dlo,
