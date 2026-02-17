@@ -43,12 +43,16 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['seriales_raw'])) {
         // ID de Lote para agrupación
         $id_lote = date('YmdHis') . '-' . rand(100,999);
         
-        // Buscar lugar de destino (Bodega)
-        $stmt_lugar = $pdo->query("SELECT id, sede, nombre FROM lugares WHERE nombre LIKE '%Bodega%' LIMIT 1");
+        // Buscar lugar de destino (Bodega) — query exacta, sin LIKE peligroso
+        $stmt_lugar = $pdo->prepare("SELECT id FROM lugares WHERE nombre = ? LIMIT 1");
+        $stmt_lugar->execute(['Bodega de Tecnología']);
         $lugar_defecto = $stmt_lugar->fetch(PDO::FETCH_ASSOC);
 
-        $id_lugar_final = $lugar_defecto['id'] ?? 1;
-        $sede_final = $lugar_defecto['sede'] ?? 'Sede Principal';
+        if (!$lugar_defecto) {
+            throw new Exception("ERROR CRÍTICO: No existe 'Bodega de Tecnología' en la base de datos");
+        }
+
+        $id_lugar_final = $lugar_defecto['id'];
 
         foreach ($lista_seriales as $serial) {
             $serial = strtoupper($serial);
@@ -75,18 +79,17 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['seriales_raw'])) {
                 
                 // 3. Insertar en bitácora con desc_evento completo
                 $sql_bit = "INSERT INTO bitacora (
-                    serial_equipo, id_lugar, sede, ubicacion,
+                    serial_equipo, id_lugar,
                     tipo_evento, correo_responsable, tecnico_responsable,
                     hostname, fecha_evento, desc_evento
-                ) VALUES (?, ?, ?, 'Disposición Final', 'Baja', 'Activos Fijos', ?, ?, NOW(), ?)";
+                ) VALUES (?, ?, 'Baja', 'Activos Fijos', ?, ?, NOW(), ?)";
                 
                 $pdo->prepare($sql_bit)->execute([
                     $serial, 
-                    $id_lugar_final, 
-                    $sede_final, 
+                    $id_lugar_final,
                     $tecnico, 
                     "LOTE:$id_lote",
-                    $desc_evento_completo // "Robo o pérdida | Acta #2026-B05"
+                    $desc_evento_completo
                 ]);
                 
                 $pdo->commit();
