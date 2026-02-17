@@ -17,9 +17,14 @@ require_once __DIR__ . '/config_crypto.php';
 
 // --- SOPORTE PARA CLÚSTERES ---
 // --- CONEXIÓN PARA MICROSOFT SQL SERVER ---
-$host = $dbConf['host'] ?? '10.194.194.190';
-$db   = $dbConf['name'] ?? 'Trazabilidad_Equipos';
-$port = $dbConf['port'] ?? 1433; // Puerto por defecto MS SQL
+//$host = $dbConf['host'] ?? '10.194.194.190';
+//$db   = $dbConf['name'] ?? 'Trazabilidad_Equipos';
+//$port = $dbConf['port'] ?? 1433; // Puerto por defecto MS SQL
+
+//MOMENTANEO PARA ENTRAR
+$host = '10.194.194.190';
+$db   = 'Trazabilidad_Equipos';
+$port = 1433;
 
 // Soportar el formato Host,Puerto si viene así desde la configuración
 if (strpos($host, ',') === false) {
@@ -33,8 +38,12 @@ if (strpos($host, ',') === false) {
 $dsn = "sqlsrv:Server=$serverString;Database=$db;TrustServerCertificate=true";
 
 // Descifrar credenciales (prefijo db_ para evitar colisión)
-$db_user = $dbConf['user'] ?? 'Usr_Trazabilidad_Equipos';
-$db_pass = !empty($dbConf['pass']) ? ConfigCrypto::decrypt($dbConf['pass']) : '';
+// $db_user = $dbConf['user'] ?? 'Usr_Trazabilidad_Equipos';
+// $db_pass = !empty($dbConf['pass']) ? ConfigCrypto::decrypt($dbConf['pass']) : '';
+
+//MOMENTANEO
+$db_user = 'Usr_Trazabilidad_Equipos';
+$db_pass = 'Tr4zab1l1d4d2026*';
 
 $options = [
     PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
