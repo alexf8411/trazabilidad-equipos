@@ -1,7 +1,13 @@
 <?php
 /**
  * URTRACK - Centro de Diagnóstico Seguro
- * Versión 3.0 - Solo para Administradores
+ * Versión 3.1 - SQL SERVER
+ * Solo para Administradores
+ * 
+ * MIGRACIÓN SQL SERVER:
+ * ✅ information_schema.STATISTICS → sys.indexes
+ * ✅ DATABASE() → DB_NAME()
+ * ✅ DATE(fecha_evento) → CAST(fecha_evento AS DATE)
  */
 
 require_once '../core/db.php';
@@ -36,7 +42,7 @@ try {
     $diagnostico['db'] = [
         'status' => 'online',
         'response_time' => $query_time . ' ms',
-        'connection' => 'PDO MySQL',
+        'connection' => 'PDO SQL Server',
     ];
     
     if ($query_time > 100) {
@@ -87,7 +93,7 @@ if (isset($config['ldap']['host'])) {
                 'mensaje' => 'LDAP no disponible - Las búsquedas de usuarios pueden fallar'
             ];
         }
-        ldap_close($conn);
+        @ldap_close($conn);
     } else {
         $diagnostico['ldap'] = [
             'status' => 'offline',
@@ -141,18 +147,19 @@ if (isset($config['mail']['smtp_user'])) {
 }
 
 // ============================================================================
-// 4. MÉTRICAS DE BASE DE DATOS
+// 4. MÉTRICAS DE BASE DE DATOS (SQL SERVER)
 // ============================================================================
 try {
     $total_equipos = $pdo->query("SELECT COUNT(*) FROM equipos")->fetchColumn();
     $activos = $pdo->query("SELECT COUNT(*) FROM equipos WHERE estado_maestro = 'Alta'")->fetchColumn();
     $total_bitacora = $pdo->query("SELECT COUNT(*) FROM bitacora")->fetchColumn();
     
+    // Contar índices en bitacora (SQL Server)
     $stmt = $pdo->query("
-        SELECT COUNT(DISTINCT INDEX_NAME) as total_indices
-        FROM information_schema.STATISTICS
-        WHERE table_schema = DATABASE()
-        AND TABLE_NAME = 'bitacora'
+        SELECT COUNT(*) as total_indices
+        FROM sys.indexes i
+        INNER JOIN sys.tables t ON i.object_id = t.object_id
+        WHERE t.name = 'bitacora'
     ");
     $indices_bitacora = $stmt->fetchColumn();
     
@@ -166,7 +173,7 @@ try {
     if ($total_bitacora > 100000) {
         $recomendaciones[] = [
             'tipo' => 'info',
-            'mensaje' => "La bitácora tiene {$total_bitacora} registros. Considerar archivar eventos antiguos (>2 años)."
+            'mensaje' => "La bitácora tiene " . number_format($total_bitacora) . " registros. Considerar archivar eventos antiguos (>2 años)."
         ];
     }
     
@@ -182,11 +189,11 @@ try {
 }
 
 // ============================================================================
-// 5. ALERTAS DE SEGURIDAD
+// 5. ALERTAS DE SEGURIDAD (SQL SERVER)
 // ============================================================================
 try {
     $hoy = date('Y-m-d');
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM bitacora WHERE DATE(fecha_evento) = ?");
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM bitacora WHERE CAST(fecha_evento AS DATE) = ?");
     $stmt->execute([$hoy]);
     $movimientos_hoy = $stmt->fetchColumn();
     
@@ -360,7 +367,7 @@ foreach ($archivos_criticos as $path => $nombre) {
     <div style="display: flex; gap: 15px; margin-bottom: 30px; flex-wrap: wrap;">
         <a href="diagnostico.php" class="btn btn-primary">🔄 Refrescar</a>
         <a href="escaner_db.php" class="btn btn-outline">🔍 Escáner BD</a>
-        <a href="syscheck.php" class="btn btn-outline">🐧 System Check</a>
+        <a href="syscheck.php" class="btn btn-outline">🖥️ Infraestructura</a>
         <a href="configuracion.php" class="btn btn-outline">⬅ Volver a Configuración</a>
     </div>
     
