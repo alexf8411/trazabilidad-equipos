@@ -51,22 +51,22 @@ function obtenerDatosDB($pdo, $db_name, $force_refresh = false) {
         // ================================================================
         // 1. INFORMACIÓN GENERAL DE LA BASE DE DATOS (SIN PERMISOS DE SERVIDOR)
         // ================================================================
-        // Solo información que no requiere VIEW SERVER STATE
-        $datos['info_bd'] = [
-            'nombre_bd' => DB_NAME(),
-            'version_sql' => 'SQL Server',
-            'nivel' => 'N/A (requiere permisos de servidor)',
-            'edicion' => 'N/A (requiere permisos de servidor)'
-        ];
-        
-        // Tamaño total de la BD (solo archivos visibles)
+        // Obtener nombre de la BD y tamaño
         $stmt = $pdo->query("
             SELECT 
+                DB_NAME() AS nombre_bd,
                 SUM(CAST(size AS BIGINT) * 8.0 / 1024) AS tamano_mb
             FROM sys.database_files
         ");
-        $size = $stmt->fetch(PDO::FETCH_ASSOC);
-        $datos['info_bd']['tamano_total_mb'] = round($size['tamano_mb'], 2);
+        $info = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        $datos['info_bd'] = [
+            'nombre_bd' => $info['nombre_bd'],
+            'version_sql' => 'SQL Server',
+            'nivel' => 'N/A (requiere permisos de servidor)',
+            'edicion' => 'N/A (requiere permisos de servidor)',
+            'tamano_total_mb' => round($info['tamano_mb'], 2)
+        ];
         
         // ================================================================
         // 2. RESUMEN DE TABLAS (TOP 20 por tamaño) - SIN dm_db_partition_stats
