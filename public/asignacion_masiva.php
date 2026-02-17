@@ -268,7 +268,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirm_save'])) {
         $items = json_decode($_POST['items_json'], true);
         if (json_last_error() !== JSON_ERROR_NONE) throw new Exception("Datos del CSV inválidos o corruptos al enviar.");
         
-        $stmt_l = $pdo->prepare("SELECT sede, nombre FROM lugares WHERE id = ?");
+        // Validar que el lugar existe
+        $stmt_l = $pdo->prepare("SELECT id FROM lugares WHERE id = ?");
         $stmt_l->execute([$_POST['id_lugar']]);
         $l = $stmt_l->fetch();
         if (!$l) throw new Exception("La ubicación seleccionada es inválida.");
@@ -281,14 +282,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirm_save'])) {
         $pdo->beginTransaction();
         $serials_procesados = [];
         
-        // CÓDIGO RESTAURADO SEGÚN TU ESTRUCTURA REAL
+        // sede y ubicacion ya no se guardan, se leen de tabla lugares via JOIN
         $sql = "INSERT INTO bitacora (
-            serial_equipo, id_lugar, sede, ubicacion,
+            serial_equipo, id_lugar,
             campo_adic1, desc_evento, tipo_evento,
             correo_responsable, responsable_secundario,
             tecnico_responsable, hostname, fecha_evento,
             check_dlo, check_antivirus, check_sccm
-        ) VALUES (?, ?, ?, ?, ?, ?, 'Asignacion_Masiva', ?, ?, ?, ?, NOW(), ?, ?, ?)";
+        ) VALUES (?, ?, ?, ?, 'Asignacion_Masiva', ?, ?, ?, ?, NOW(), ?, ?, ?)";
         
         $stmt = $pdo->prepare($sql);
         
@@ -299,16 +300,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirm_save'])) {
         foreach ($items as $item) {
             if ($item['status'] !== 'valid') continue;
             
-            // Verificación extra: Asegurarnos de que el serial no esté vacío antes de insertar
             if (empty($item['serial'])) {
-                 throw new Exception("El equipo con placa " . $item['placa'] . " no tiene un serial válido asociado en la base de datos.");
+                throw new Exception("El equipo con placa " . $item['placa'] . " no tiene un serial válido asociado en la base de datos.");
             }
 
             $stmt->execute([
                 $item['serial'], 
-                $_POST['id_lugar'], 
-                $l['sede'], 
-                $l['nombre'],
+                $_POST['id_lugar'],
                 $item['comentarios'], 
                 $desc_evento,
                 $_POST['correo_resp_real'], 
