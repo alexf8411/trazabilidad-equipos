@@ -16,29 +16,24 @@ $dbConf = $config['db'] ?? [];
 require_once __DIR__ . '/config_crypto.php';
 
 // --- SOPORTE PARA CLÚSTERES ---
-// Modo 1: DSN completa (para clústeres avanzados)
-if (isset($dbConf['dsn']) && !empty($dbConf['dsn'])) {
-    $dsn = $dbConf['dsn'];
-    
-// Modo 2: Host + Nombre (tradicional o clúster con VIP)
+// --- CONEXIÓN PARA MICROSOFT SQL SERVER ---
+$host = $dbConf['host'] ?? '10.194.194.190';
+$db   = $dbConf['name'] ?? 'Trazabilidad_Equipos';
+$port = $dbConf['port'] ?? 1433; // Puerto por defecto MS SQL
+
+// Soportar el formato Host,Puerto si viene así desde la configuración
+if (strpos($host, ',') === false) {
+    $serverString = "$host,$port";
 } else {
-    $host = $dbConf['host'] ?? '127.0.0.1';
-    $db   = $dbConf['name'] ?? 'trazabilidad_local';
-    $port = $dbConf['port'] ?? 3306; // Nuevo: puerto configurable
-    $charset = 'utf8mb4';
-    
-    // Soportar múltiples hosts separados por coma (failover)
-    if (strpos($host, ',') !== false) {
-        // Clúster con múltiples nodos: mysql:host=node1,node2,node3
-        $dsn = "mysql:host=$host;port=$port;dbname=$db;charset=$charset";
-    } else {
-        // Host único
-        $dsn = "mysql:host=$host;port=$port;dbname=$db;charset=$charset";
-    }
+    $serverString = $host; // Si el usuario ya puso la coma en el panel
 }
 
+// Formato DSN para el driver pdo_sqlsrv de Microsoft
+// TrustServerCertificate=true es vital para redes internas sin SSL comercial en la BD
+$dsn = "sqlsrv:Server=$serverString;Database=$db;TrustServerCertificate=true";
+
 // Descifrar credenciales (prefijo db_ para evitar colisión)
-$db_user = $dbConf['user'] ?? 'appadmdb';
+$db_user = $dbConf['user'] ?? 'Usr_Trazabilidad_Equipos';
 $db_pass = !empty($dbConf['pass']) ? ConfigCrypto::decrypt($dbConf['pass']) : '';
 
 $options = [

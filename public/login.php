@@ -47,7 +47,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 try {
                     $pdo->prepare("INSERT INTO auditoria_acceso 
                         (fecha_hora, usuario_ldap, usuario_nombre, ip_acceso, resultado)
-                        VALUES (NOW(), ?, ?, ?, 'Login_Exitoso')")
+                        VALUES (GETDATE(), ?, ?, ?, 'Login_Exitoso')")
                         ->execute([$login_user, $nombre_ldap, $ip_cliente]);
                 } catch (Exception $e) {
                     error_log("Fallo auditoría login exitoso: " . $e->getMessage());
@@ -77,7 +77,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 try {
                     $pdo->prepare("INSERT INTO auditoria_acceso 
                         (fecha_hora, usuario_ldap, usuario_nombre, ip_acceso, resultado)
-                        VALUES (NOW(), ?, NULL, ?, ?)")
+                        VALUES (GETDATE(), ?, NULL, ?, ?)")
                         ->execute([$login_user, $ip_cliente, $resultado_auditoria]);
                 } catch (Exception $e) {
                     error_log("Fallo auditoría login fallido: " . $e->getMessage());

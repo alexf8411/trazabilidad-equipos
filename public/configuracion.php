@@ -89,7 +89,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $pdo->prepare("INSERT INTO auditoria_cambios 
                 (fecha, usuario_ldap, usuario_nombre, usuario_rol, ip_origen, 
                 tipo_accion, tabla_afectada, referencia, valor_anterior, valor_nuevo) 
-                VALUES (NOW(), ?, ?, ?, ?, 'CAMBIO_CONFIGURACION', 'config', ?, NULL, ?)")
+                VALUES (GETDATE(), ?, ?, ?, ?, 'CAMBIO_CONFIGURACION', 'config', ?, NULL, ?)")
                 ->execute([
                     $usuario_ldap,
                     $usuario_nombre,
