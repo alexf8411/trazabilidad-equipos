@@ -1,6 +1,6 @@
 <?php
 /**
- * public/generar_acta_masiva.php
+ * public/generar_acta_masiva.php 
  * Genera el Manifiesto de Entrega usando texto configurable
  */
 require_once '../core/db.php';
@@ -11,20 +11,19 @@ require_once '../vendor/autoload.php';
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
 
-// Validar Datos
 if (!isset($_GET['serials'])) die("<div style='padding:20px; color:red; font-family:sans-serif'>Error: Faltan datos de equipos.</div>");
 
 $serials_input = explode(',', $_GET['serials']);
 $action = $_GET['action'] ?? 'view';
 $serials = array_map('trim', $serials_input);
-// Crear placeholders seguros para SQL IN (?,?,?)
 $placeholders = str_repeat('?,', count($serials) - 1) . '?';
 
-// Consultar todos los equipos y sus últimos movimientos
+// Consultar — sede y nombre vienen de tabla lugares via JOIN
 $sql = "SELECT e.serial, e.placa_ur, e.marca, e.modelo, 
-               b.hostname, b.fecha_evento, b.tipo_evento, b.sede, b.ubicacion, 
+               b.hostname, b.fecha_evento, b.tipo_evento,
                b.correo_responsable, b.responsable_secundario, b.tecnico_responsable,
-               l.nombre as nombre_lugar
+               l.sede AS sede_lugar,
+               l.nombre AS nombre_lugar
         FROM equipos e
         JOIN bitacora b ON e.serial = b.serial_equipo
         LEFT JOIN lugares l ON b.id_lugar = l.id
@@ -37,7 +36,7 @@ $stmt->execute($serials);
 $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 if (!$rows) die("Error: No se encontraron registros.");
-$head = $rows[0]; // Usamos el primer registro para los datos de cabecera
+$head = $rows[0];
 
 // Clase PDF
 class PDF_Masivo extends \FPDF {
@@ -63,7 +62,6 @@ class PDF_Masivo extends \FPDF {
     }
 }
 
-// Función Generadora
 function construirPDFMasivo($rows, $head) {
     $pdf = new PDF_Masivo();
     $pdf->AliasNbPages();
@@ -80,9 +78,9 @@ function construirPDFMasivo($rows, $head) {
     $pdf->SetFont('Arial', '', 9);  $pdf->Cell(65, 6, 'ASIGNACION MASIVA', 1, 1);
     
     $pdf->SetFont('Arial', 'B', 9); $pdf->Cell(30, 6, 'Sede:', 1);
-    $pdf->SetFont('Arial', '', 9);  $pdf->Cell(65, 6, utf8_decode($head['sede']), 1);
+    $pdf->SetFont('Arial', '', 9);  $pdf->Cell(65, 6, utf8_decode($head['sede_lugar'] ?? ''), 1);
     $pdf->SetFont('Arial', 'B', 9); $pdf->Cell(30, 6, utf8_decode('Ubicación:'), 1);
-    $pdf->SetFont('Arial', '', 9);  $pdf->Cell(65, 6, utf8_decode($head['ubicacion']), 1, 1);
+    $pdf->SetFont('Arial', '', 9);  $pdf->Cell(65, 6, utf8_decode($head['nombre_lugar'] ?? ''), 1, 1);
     $pdf->Ln(5);
 
     // 2. Responsables
@@ -113,7 +111,7 @@ function construirPDFMasivo($rows, $head) {
     }
     $pdf->Ln(10);
 
-    // 4. Texto Legal Configurable
+    // 4. Texto Legal
     $texto_legal = file_get_contents('../core/acta_masiva.txt');
     if(!$texto_legal) $texto_legal = "El usuario declara recibir los equipos listados..."; 
     
@@ -130,77 +128,163 @@ function construirPDFMasivo($rows, $head) {
     return $pdf;
 }
 
-// LÓGICA DE SALIDA
-
-// Descargar
 if ($action == 'download') {
     $pdf = construirPDFMasivo($rows, $head);
     $pdf->Output('D', 'Acta_Masiva_' . date('Ymd_His') . '.pdf');
     exit;
 }
 
-// Enviar Correo
 if ($action == 'send_mail') {
     $pdf = construirPDFMasivo($rows, $head);
     $pdfContent = $pdf->Output('S'); 
     $mail = new PHPMailer(true);
     try {
         $mail->isSMTP();
-        $mail->Host = SMTP_HOST; $mail->SMTPAuth = true; $mail->Username = SMTP_USER; $mail->Password = SMTP_PASS;
+        $mail->Host = SMTP_HOST; $mail->SMTPAuth = true;
+        $mail->Username = SMTP_USER; $mail->Password = SMTP_PASS;
         $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS; $mail->Port = SMTP_PORT;
         $mail->SMTPOptions = ['ssl' => ['verify_peer' => false, 'verify_peer_name' => false, 'allow_self_signed' => true]];
-        
         $mail->setFrom(SMTP_USER, SMTP_FROM_NAME);
         $mail->addAddress($head['correo_responsable']);
         $mail->addStringAttachment($pdfContent, 'Acta_Masiva_URTRACK.pdf');
-        
         $mail->isHTML(true);
         $mail->Subject = 'URTRACK: Acta Masiva - ' . count($rows) . ' Activos';
         $mail->Body    = 'Buen día,<br><br>Adjunto Manifiesto de Entrega.<br><br>Atentamente,<br>URTRACK';
-        
         $mail->send(); echo "OK"; 
     } catch (Exception $e) { http_response_code(500); echo $mail->ErrorInfo; }
     exit;
 }
 
-// Vista Previa (HTML con iframe)
 if ($action == 'view') {
     $pdf = construirPDFMasivo($rows, $head);
     $pdfBase64 = base64_encode($pdf->Output('S'));
-    $serials_str = $_GET['serials'];
+    $serials_str = htmlspecialchars($_GET['serials']);
 ?>
 <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Vista Previa Masiva</title>
+    <title>Vista Previa Masiva | URTRACK</title>
     <style>
-        body { margin: 0; padding: 0; font-family: 'Segoe UI', sans-serif; background: #525659; overflow: hidden; }
-        .toolbar { background: #323639; color: white; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; height: 40px; }
-        .btn { padding: 8px 15px; border-radius: 4px; border: none; font-weight: bold; cursor: pointer; text-decoration: none; display: flex; align-items: center; gap: 8px; font-size: 0.9rem; }
-        .btn-send { background: #22c55e; color: white; } .btn-back { background: #64748b; color: white; } .btn-down { background: #0ea5e9; color: white; }
-        iframe { width: 100%; height: calc(100vh - 60px); border: none; display: block; }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Segoe UI', sans-serif; background: #525659; overflow: hidden; }
+
+        .toolbar {
+            background: #1e293b;
+            color: white;
+            padding: 0 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            height: 56px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            gap: 10px;
+        }
+
+        .toolbar-left, .toolbar-right {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .toolbar-info {
+            color: #94a3b8;
+            font-size: 0.85rem;
+            padding-left: 12px;
+            border-left: 1px solid #334155;
+        }
+
+        .btn {
+            padding: 8px 16px;
+            border-radius: 6px;
+            border: none;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.85rem;
+            transition: all 0.2s;
+            white-space: nowrap;
+        }
+
+        .btn-home  { background: #334155; color: #e2e8f0; }
+        .btn-home:hover { background: #475569; }
+        .btn-back  { background: #475569; color: #e2e8f0; }
+        .btn-back:hover { background: #334155; }
+        .btn-down  { background: #0ea5e9; color: white; }
+        .btn-down:hover { background: #0284c7; }
+        .btn-send  { background: #22c55e; color: white; }
+        .btn-send:hover { background: #16a34a; }
+        .btn-send:disabled { background: #64748b; cursor: not-allowed; opacity: 0.7; }
+
+        .status-msg {
+            font-size: 0.85rem;
+            font-weight: 600;
+            padding: 6px 12px;
+            border-radius: 6px;
+            display: none;
+        }
+        .status-ok  { background: #166534; color: #bbf7d0; display: inline-flex; }
+        .status-err { background: #7f1d1d; color: #fecaca; display: inline-flex; }
+
+        iframe { width: 100%; height: calc(100vh - 56px); border: none; display: block; }
     </style>
 </head>
 <body>
     <div class="toolbar">
-        <div><a href="asignacion_masiva.php" class="btn btn-back">⬅ Volver</a></div>
-        <div style="display: flex; gap: 10px;">
-            <span id="statusMsg" style="color: white; font-weight: bold; margin-right:10px;"></span>
-            <a href="generar_acta_masiva.php?serials=<?= $serials_str ?>&action=download" class="btn btn-down">⬇ PDF</a>
+        <div class="toolbar-left">
+            <a href="dashboard.php" class="btn btn-home">🏠 Dashboard</a>
+            <a href="asignacion_masiva.php" class="btn btn-back">⬅ Volver</a>
+            <span class="toolbar-info">
+                Manifiesto Masivo — <strong><?= count($rows) ?> equipos</strong>
+            </span>
+        </div>
+
+        <div class="toolbar-right">
+            <span id="statusMsg" class="status-msg"></span>
+            <a href="generar_acta_masiva.php?serials=<?= $serials_str ?>&action=download" class="btn btn-down">
+                ⬇ Descargar PDF
+            </a>
             <button id="btnSend" class="btn btn-send">📧 Enviar</button>
         </div>
     </div>
+
     <iframe src="data:application/pdf;base64,<?= $pdfBase64 ?>#toolbar=0&navpanes=0&view=FitH"></iframe>
+
     <script>
         document.getElementById('btnSend').addEventListener('click', function() {
             const btn = this;
-            const originalText = btn.innerHTML;
-            btn.innerHTML = '⏳...'; btn.disabled = true;
-            fetch('generar_acta_masiva.php?serials=<?= $serials_str ?>&action=send_mail').then(r => r.text()).then(d => {
-                if(d==='OK'){ btn.style.background='#15803d'; btn.innerHTML='✅ Enviado'; } else { throw new Error(d); }
-            }).catch(e => { alert(e); btn.innerHTML = originalText; btn.disabled = false; });
+            const msg = document.getElementById('statusMsg');
+
+            if (!confirm('¿Enviar el Manifiesto al responsable?')) return;
+
+            btn.disabled = true;
+            btn.innerHTML = '⏳ Enviando...';
+
+            fetch('generar_acta_masiva.php?serials=<?= $serials_str ?>&action=send_mail')
+                .then(r => r.text())
+                .then(d => {
+                    if (d === 'OK') {
+                        btn.innerHTML = '✅ Enviado';
+                        btn.style.background = '#15803d';
+                        msg.className = 'status-msg status-ok';
+                        msg.textContent = '✅ Correo enviado correctamente';
+                        msg.style.display = 'inline-flex';
+                    } else {
+                        throw new Error(d);
+                    }
+                })
+                .catch(e => {
+                    btn.disabled = false;
+                    btn.innerHTML = '📧 Reintentar';
+                    msg.className = 'status-msg status-err';
+                    msg.textContent = '❌ Error al enviar';
+                    msg.style.display = 'inline-flex';
+                    alert('Error: ' + e.message);
+                });
         });
     </script>
 </body>

@@ -1,8 +1,7 @@
 <?php
 /**
  * public/generar_acta_baja.php
- * Visor de Acta de Baja Masiva (Sin Precios)
- * Versión Final corregida
+ * Visor de Acta de Baja Masiva
  */
 require_once '../core/db.php';
 require_once '../core/session.php';
@@ -14,19 +13,19 @@ use PHPMailer\PHPMailer\Exception;
 
 // 1. VALIDACIÓN DE SESIÓN
 if (empty($_SESSION['acta_baja_seriales'])) {
-    die("<div style='color:white; background:#333; padding:20px; text-align:center; font-family:sans-serif;'>
+    die("<div style='color:white; background:#1e293b; padding:30px; text-align:center; font-family:sans-serif;'>
             <h3>⛔ No hay un lote de bajas activo.</h3>
-            <a href='baja_equipos.php' style='color:#4ade80;'>Volver al módulo de bajas</a>
+            <a href='baja_equipos.php' style='color:#4ade80; margin-top:10px; display:inline-block;'>⬅ Volver al módulo de bajas</a>
          </div>");
 }
 
-$seriales = $_SESSION['acta_baja_seriales'];
-$motivo = $_SESSION['acta_baja_motivo'];
-$lote = $_SESSION['acta_baja_lote'];
-$tecnico = $_SESSION['nombre'];
-$action = $_GET['action'] ?? 'view';
+$seriales   = $_SESSION['acta_baja_seriales'];
+$motivo     = $_SESSION['acta_baja_motivo'];
+$lote       = $_SESSION['acta_baja_lote'];
+$tecnico    = $_SESSION['nombre'];
+$action     = $_GET['action'] ?? 'view';
 
-// 2. OBTENER DATOS (Sin columna precio)
+// 2. OBTENER DATOS
 $placeholders = str_repeat('?,', count($seriales) - 1) . '?';
 $stmt = $pdo->prepare("SELECT placa_ur, serial, marca, modelo FROM equipos WHERE serial IN ($placeholders)");
 $stmt->execute($seriales);
@@ -55,7 +54,6 @@ function construirPDF($lote, $motivo, $tecnico, $equipos) {
     $pdf->AddPage();
     $pdf->SetFont('Arial', '', 11);
 
-    // Bloque 1: Datos del Lote
     $pdf->SetFillColor(230, 240, 255);
     $pdf->Cell(0, 8, utf8_decode('DETALLES DEL LOTE DE BAJA #') . $lote, 1, 1, 'L', true);
     
@@ -74,12 +72,10 @@ function construirPDF($lote, $motivo, $tecnico, $equipos) {
     $pdf->Cell(155, 8, utf8_decode($motivo), 1, 1);
     $pdf->Ln(5);
 
-    // Bloque 2: Tabla de Equipos (SIN PRECIOS)
     $pdf->SetFont('Arial', 'B', 10);
     $pdf->Cell(0, 8, utf8_decode('LISTADO DE ACTIVOS (' . count($equipos) . ' Unidades)'), 1, 1, 'L', true);
     
-    // Encabezados de tabla (Anchos ajustados: 40+50+100 = 190mm)
-    $pdf->SetFillColor(220, 53, 69); // Rojo para Bajas
+    $pdf->SetFillColor(220, 53, 69);
     $pdf->SetTextColor(255);
     $pdf->Cell(40, 7, 'Placa', 1, 0, 'C', true);
     $pdf->Cell(50, 7, 'Serial', 1, 0, 'C', true);
@@ -94,29 +90,20 @@ function construirPDF($lote, $motivo, $tecnico, $equipos) {
         $pdf->Cell(50, 7, $eq['serial'], 1);
         $pdf->Cell(100, 7, utf8_decode(substr($eq['marca'].' '.$eq['modelo'], 0, 55)), 1);
     }
-    $pdf->Ln(10); // Espacio después de la tabla
+    $pdf->Ln(10);
 
-    // Bloque 3: Texto Legal (Lectura Robusta)
     $pdf->SetFont('Arial', '', 11);
     $pdf->Cell(0, 8, utf8_decode('CERTIFICACIÓN DE DISPOSICIÓN FINAL'), 1, 1, 'L', true);
     
-    // Ruta del archivo de texto
-    $archivo_texto = '../core/acta_baja.txt';
-    $texto_legal = "";
-
-    if (file_exists($archivo_texto)) {
-        $texto_legal = file_get_contents($archivo_texto);
-    }
-
-    // Si el archivo está vacío o no existe, usamos fallback
+    $texto_legal = file_get_contents('../core/acta_baja.txt');
     if (empty($texto_legal)) {
-        $texto_legal = "CERTIFICACIÓN: Los equipos listados han sido retirados del inventario por obsolescencia o falla. (Nota: Configure este texto en el módulo de Configuración).";
+        $texto_legal = "CERTIFICACIÓN: Los equipos listados han sido retirados del inventario.";
     }
 
+    $pdf->SetFont('Arial', '', 9);
     $pdf->MultiCell(0, 6, utf8_decode($texto_legal), 0, 'J');
     $pdf->Ln(20);
 
-    // Firmas
     $pdf->Cell(90, 0, '', 'T'); 
     $pdf->Cell(10, 0, '', 0);
     $pdf->Cell(90, 0, '', 'T');
@@ -132,7 +119,6 @@ function construirPDF($lote, $motivo, $tecnico, $equipos) {
 if ($action == 'send_mail') {
     $pdf = construirPDF($lote, $motivo, $tecnico, $equipos);
     $pdfContent = $pdf->Output('S'); 
-
     $mail = new PHPMailer(true);
     try {
         $mail->isSMTP();
@@ -142,23 +128,18 @@ if ($action == 'send_mail') {
         $mail->Password   = SMTP_PASS;
         $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
         $mail->Port       = SMTP_PORT;
-
+        $mail->SMTPOptions = ['ssl' => ['verify_peer' => false, 'verify_peer_name' => false, 'allow_self_signed' => true]];
         $mail->setFrom(SMTP_USER, 'URTRACK Bajas');
-        
-        // En Bajas, el correo va al usuario logueado
         $destinatario = $_SESSION['correo_ldap'] ?? SMTP_USER;
         $mail->addAddress($destinatario);
-        
         $mail->addStringAttachment($pdfContent, 'Acta_Baja_Lote_' . $lote . '.pdf');
-
         $mail->isHTML(true);
         $mail->Subject = 'URTRACK: Acta de Baja Masiva #' . $lote;
-        $mail->Body    = 'Buen día,<br><br>Adjunto encontrará el acta técnica de la baja realizada.<br>' .
+        $mail->Body    = 'Buen día,<br><br>Adjunto acta técnica de la baja realizada.<br>' .
                          '<b>Lote:</b> ' . $lote . '<br>' .
                          '<b>Motivo:</b> ' . $motivo . '<br>' .
                          '<b>Cantidad:</b> ' . count($equipos) . ' equipos.<br><br>' .
                          'Atentamente,<br>Dirección de Tecnología - UR';
-
         $mail->send();
         echo "OK"; 
     } catch (Exception $e) {
@@ -177,68 +158,124 @@ if ($action == 'view') {
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Vista Previa Acta Baja</title>
+    <title>Acta de Baja #<?= $lote ?> | URTRACK</title>
     <style>
-        body { margin: 0; padding: 0; font-family: 'Segoe UI', sans-serif; background: #525659; overflow: hidden; }
-        .toolbar { background: #323639; color: white; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; height: 40px; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
-        .btn { padding: 8px 15px; border-radius: 4px; border: none; font-weight: bold; cursor: pointer; text-decoration: none; display: flex; align-items: center; gap: 8px; font-size: 0.9rem; transition: 0.2s; }
-        .btn-send { background: #dc3545; color: white; }
-        .btn-send:hover { background: #b02a37; }
-        .btn-send:disabled { background: #94a3b8; cursor: not-allowed; }
-        .btn-back { background: #64748b; color: white; }
-        .btn-back:hover { background: #475569; }
-        iframe { width: 100%; height: calc(100vh - 60px); border: none; }
-        .status-msg { margin-right: 15px; font-size: 0.9rem; }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Segoe UI', sans-serif; background: #525659; overflow: hidden; }
+
+        .toolbar {
+            background: #1e293b;
+            color: white;
+            padding: 0 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            height: 56px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            gap: 10px;
+        }
+
+        .toolbar-left, .toolbar-right {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .toolbar-info {
+            color: #94a3b8;
+            font-size: 0.85rem;
+            padding-left: 12px;
+            border-left: 1px solid #334155;
+        }
+
+        .btn {
+            padding: 8px 16px;
+            border-radius: 6px;
+            border: none;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.85rem;
+            transition: all 0.2s;
+            white-space: nowrap;
+        }
+
+        .btn-home  { background: #334155; color: #e2e8f0; }
+        .btn-home:hover { background: #475569; }
+        .btn-back  { background: #475569; color: #e2e8f0; }
+        .btn-back:hover { background: #334155; }
+        .btn-send  { background: #dc2626; color: white; }
+        .btn-send:hover { background: #b91c1c; }
+        .btn-send:disabled { background: #64748b; cursor: not-allowed; opacity: 0.7; }
+
+        .status-msg {
+            font-size: 0.85rem;
+            font-weight: 600;
+            padding: 6px 12px;
+            border-radius: 6px;
+            display: none;
+        }
+        .status-ok  { background: #166534; color: #bbf7d0; display: inline-flex; }
+        .status-err { background: #7f1d1d; color: #fecaca; display: inline-flex; }
+
+        iframe { width: 100%; height: calc(100vh - 56px); border: none; display: block; }
     </style>
 </head>
 <body>
     <div class="toolbar">
-        <div style="display:flex; align-items:center;">
-            <a href="baja_equipos.php" class="btn btn-back">⬅ Cerrar / Nueva Baja</a>
-            <span style="margin-left: 20px; color:#cbd5e1; font-weight:bold;">ACTA DE BAJA #<?= $lote ?></span>
+        <div class="toolbar-left">
+            <a href="dashboard.php" class="btn btn-home">🏠 Dashboard</a>
+            <a href="baja_equipos.php" class="btn btn-back">⬅ Nueva Baja</a>
+            <span class="toolbar-info">
+                Acta de Baja — Lote <strong>#<?= htmlspecialchars($lote) ?></strong>
+                — <?= count($equipos) ?> equipo(s)
+            </span>
         </div>
-        
-        <div style="display:flex; align-items:center;">
+
+        <div class="toolbar-right">
             <span id="statusMsg" class="status-msg"></span>
-            <button id="btnSend" onclick="enviarCorreo()" class="btn btn-send">
-                📧 Enviar Copia
-            </button>
+            <button id="btnSend" class="btn btn-send">📧 Enviar Copia</button>
         </div>
     </div>
 
     <iframe src="data:application/pdf;base64,<?= $pdfBase64 ?>" type="application/pdf"></iframe>
 
     <script>
-        function enviarCorreo() {
-            const btn = document.getElementById('btnSend');
+        document.getElementById('btnSend').addEventListener('click', function() {
+            const btn = this;
             const msg = document.getElementById('statusMsg');
-            
-            if(!confirm('¿Enviar copia del Acta a <?= $_SESSION['correo_ldap'] ?? 'su correo' ?>?')) return;
+            const destino = '<?= htmlspecialchars($_SESSION['correo_ldap'] ?? 'su correo') ?>';
+
+            if (!confirm('¿Enviar copia del Acta a ' + destino + '?')) return;
 
             btn.disabled = true;
             btn.innerHTML = '⏳ Enviando...';
-            msg.innerHTML = '';
 
             fetch('generar_acta_baja.php?action=send_mail')
-                .then(response => {
-                    if (response.ok) {
+                .then(r => r.text())
+                .then(d => {
+                    if (d === 'OK') {
                         btn.innerHTML = '✅ Enviado';
-                        btn.style.background = '#198754';
-                        msg.innerHTML = 'Acta enviada correctamente.';
-                        msg.style.color = '#4ade80';
+                        btn.style.background = '#15803d';
+                        msg.className = 'status-msg status-ok';
+                        msg.textContent = '✅ Correo enviado correctamente';
+                        msg.style.display = 'inline-flex';
                     } else {
-                        return response.text().then(text => { throw new Error(text) });
+                        throw new Error(d);
                     }
                 })
-                .catch(error => {
+                .catch(e => {
                     btn.disabled = false;
                     btn.innerHTML = '❌ Reintentar';
-                    btn.style.background = '#ef4444';
-                    msg.innerHTML = 'Error de envío.';
-                    console.error(error);
-                    alert("Error: " + error.message);
+                    msg.className = 'status-msg status-err';
+                    msg.textContent = '❌ Error al enviar';
+                    msg.style.display = 'inline-flex';
+                    alert('Error: ' + e.message);
                 });
-        }
+        });
     </script>
 </body>
 </html>
