@@ -47,22 +47,27 @@ if (isset($_GET['serial'])) {
         // =========================================================================
         // 4. REGISTRO EN AUDITORÍA DE CAMBIOS (TABLA: auditoria_cambios)
         // =========================================================================
-        $sql_audit = "INSERT INTO auditoria_cambios (
-                        usuario_responsable, 
-                        tipo_accion, 
-                        referencia, 
-                        detalles, 
-                        ip_origen, 
-                        fecha
-                    ) VALUES (?, ?, ?, ?, ?, NOW())";
-        
-        $pdo->prepare($sql_audit)->execute([
-            $correo_admin,
-            'UPDATE REVERT',
-            "Equipo: $serial",
-            "Reversión administrativa de Baja a Alta. Placa: " . $equipo['placa_ur'],
-            $_SERVER['REMOTE_ADDR']
-        ]);
+       // AUDITORÍA — Registrar reversión
+        try {
+            $usuario_ldap   = $_SESSION['usuario_id'] ?? 'desconocido';
+            $usuario_nombre = $_SESSION['nombre']     ?? 'Usuario sin nombre';
+            $usuario_rol    = $_SESSION['rol']        ?? 'Administrador';
+            $ip_cliente     = $_SERVER['REMOTE_ADDR'];
+            
+            $pdo->prepare("INSERT INTO auditoria_cambios 
+                (fecha, usuario_ldap, usuario_nombre, usuario_rol, ip_origen, 
+                tipo_accion, tabla_afectada, referencia, valor_anterior, valor_nuevo) 
+                VALUES (NOW(), ?, ?, ?, ?, 'REVERSION_BAJA', 'equipos', ?, 'Baja', 'Alta')")
+                ->execute([
+                    $usuario_ldap,
+                    $usuario_nombre,
+                    $usuario_rol,
+                    $ip_cliente,
+                    "Equipo: " . htmlspecialchars($equipo['placa_ur'])
+                ]);
+        } catch (Exception $e) {
+            error_log("Fallo auditoría reversión: " . $e->getMessage());
+        }
 
         // =========================================================================
         // 5. REGISTRO EN BITÁCORA (TABLA: bitacora)
