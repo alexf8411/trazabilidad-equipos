@@ -77,6 +77,28 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['seriales_raw'])) {
                 $pdo->prepare("UPDATE equipos SET estado_maestro = 'Baja' WHERE serial = ?")
                     ->execute([$serial]);
                 
+                // AUDITORÍA — Registrar baja del equipo
+                try {
+                    $usuario_ldap   = $_SESSION['usuario_id'] ?? 'desconocido';
+                    $usuario_nombre = $_SESSION['nombre']     ?? 'Usuario sin nombre';
+                    $usuario_rol    = $_SESSION['rol']        ?? 'Soporte';
+                    $ip_cliente     = $_SERVER['REMOTE_ADDR'];
+                    
+                    $pdo->prepare("INSERT INTO auditoria_cambios 
+                        (fecha, usuario_ldap, usuario_nombre, usuario_rol, ip_origen, 
+                        tipo_accion, tabla_afectada, referencia, valor_anterior, valor_nuevo) 
+                        VALUES (NOW(), ?, ?, ?, ?, 'BAJA_EQUIPO', 'equipos', ?, 'Alta', 'Baja')")
+                        ->execute([
+                            $usuario_ldap,
+                            $usuario_nombre,
+                            $usuario_rol,
+                            $ip_cliente,
+                            "Equipo: $placa_ur (Motivo: $motivo_baja)"
+                        ]);
+                } catch (Exception $e) {
+                    error_log("Fallo auditoría baja equipo: " . $e->getMessage());
+                }
+                
                 // 3. Insertar en bitácora con desc_evento completo
                 $sql_bit = "INSERT INTO bitacora (
                     serial_equipo, id_lugar,
