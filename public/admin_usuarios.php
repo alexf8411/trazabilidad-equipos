@@ -24,10 +24,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $rol    = $_POST['rol'];
 
         try {
-            $sql = "INSERT INTO usuarios_sistema (correo_ldap, nombre_completo, rol, estado) VALUES (?, ?, ?, 'Activo')";
-            $stmt = $pdo->prepare($sql);
-            $stmt->execute([$correo, $nombre, $rol]);
-            $mensaje = "<div class='alert success'>✅ Usuario <strong>$correo</strong> autorizado.</div>";
+        $sql = "INSERT INTO usuarios_sistema (correo_ldap, nombre_completo, rol, estado) VALUES (?, ?, ?, 'Activo')";
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute([$correo, $nombre, $rol]);
+        
+        // AUDITORÍA — Nuevo usuario autorizado
+        try {
+            $usuario_ldap   = $_SESSION['usuario_id'] ?? 'desconocido';
+            $usuario_nombre = $_SESSION['nombre']     ?? 'Usuario sin nombre';
+            $usuario_rol    = $_SESSION['rol']        ?? 'Administrador';
+            $ip_cliente     = $_SERVER['REMOTE_ADDR'];
+            
+            $pdo->prepare("INSERT INTO auditoria_cambios 
+                (fecha, usuario_ldap, usuario_nombre, usuario_rol, ip_origen, 
+                tipo_accion, tabla_afectada, referencia, valor_anterior, valor_nuevo) 
+                VALUES (NOW(), ?, ?, ?, ?, 'CAMBIO_USUARIO', 'usuarios_sistema', ?, NULL, ?)")
+                ->execute([
+                    $usuario_ldap,
+                    $usuario_nombre,
+                    $usuario_rol,
+                    $ip_cliente,
+                    "Usuario: $correo",
+                    "Nuevo usuario autorizado - Rol: $rol"
+                ]);
+        } catch (Exception $e) {
+            error_log("Fallo auditoría crear usuario: " . $e->getMessage());
+        }
+        
+        $mensaje = "<div class='alert success'>✅ Usuario <strong>$correo</strong> autorizado.</div>";
+        
         } catch (PDOException $e) {
             if ($e->getCode() == '23000') {
                 $mensaje = "<div class='alert error'>⚠️ El usuario ya existe.</div>";
