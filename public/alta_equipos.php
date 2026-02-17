@@ -1,6 +1,6 @@
 <?php
 /**
- * URTRACK - Alta de Equipos
+ * URTRACK - Alta de Equipos 
  * Versión 3.0 OPTIMIZADA
  * 
  * OPTIMIZACIONES IMPLEMENTADAS:
@@ -43,7 +43,7 @@ function obtenerBodega($pdo) {
     // Cachear en sesión para evitar query repetida
     if (!isset($_SESSION['bodega_cache'])) {
         // Solo necesitamos el ID — sede y nombre ya no se guardan en bitácora
-        $stmt = $pdo->prepare("SELECT id FROM lugares WHERE nombre = ? LIMIT 1");
+        $stmt = $pdo->prepare("SELECT TOP 1 id FROM lugares WHERE nombre = ?");
         $stmt->execute(['Bodega de Tecnología']);
         $bodega = $stmt->fetch(PDO::FETCH_ASSOC);
         
@@ -115,7 +115,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                                 serial_equipo, id_lugar,
                                 tipo_evento, correo_responsable, fecha_evento, 
                                 tecnico_responsable, hostname, desc_evento, check_sccm
-                              ) VALUES (?, ?, 'Alta', ?, NOW(), ?, ?, ?, 0)";
+                              ) VALUES (?, ?, 'Alta', ?, GETDATE(), ?, ?, ?, 0)";
             
             $stmt_b = $pdo->prepare($sql_bitacora);
             $stmt_b->execute([

@@ -1,6 +1,6 @@
 <?php
 /**
- * public/editar_equipo.php
+ * public/editar_equipo.php 
  * Edición Maestra de Activos y Corrección de Último Evento
  * V3.0 - Soporte para desc_evento obligatorio
  */
@@ -95,7 +95,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $sql_audit = "INSERT INTO auditoria_cambios 
                 (fecha, usuario_ldap, usuario_nombre, usuario_rol, ip_origen, 
                  tipo_accion, tabla_afectada, referencia, valor_anterior, valor_nuevo) 
-                VALUES (NOW(), ?, ?, ?, ?, 'EDICION_EQUIPO', 'equipos', ?, ?, ?)";
+                VALUES (GETDATE(), ?, ?, ?, ?, 'EDICION_EQUIPO', 'equipos', ?, ?, ?)";
             
             $stmt_audit = $pdo->prepare($sql_audit);
             $stmt_audit->execute([
@@ -123,11 +123,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     }
 }
 
-// 3. CONSULTAR DATOS (JOIN para traer el último evento)
-// Usamos una subconsulta simple para obtener el último evento de este equipo
+// 3. CONSULTAR DATOS (Migrado a MS SQL: TOP 1 en lugar de LIMIT 1)
 $sql_load = "SELECT e.*, 
-             (SELECT id_evento FROM bitacora WHERE serial_equipo = e.serial ORDER BY id_evento DESC LIMIT 1) as id_ultimo_evento,
-             (SELECT desc_evento FROM bitacora WHERE serial_equipo = e.serial ORDER BY id_evento DESC LIMIT 1) as ultimo_desc_evento
+             (SELECT TOP 1 id_evento FROM bitacora WHERE serial_equipo = e.serial ORDER BY id_evento DESC) as id_ultimo_evento,
+             (SELECT TOP 1 desc_evento FROM bitacora WHERE serial_equipo = e.serial ORDER BY id_evento DESC) as ultimo_desc_evento
              FROM equipos e 
              WHERE e.id_equipo = ?";
 

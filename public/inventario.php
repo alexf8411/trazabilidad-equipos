@@ -1,6 +1,6 @@
 <?php
 /**
- * URTRACK - Inventario General
+ * URTRACK - Inventario General 
  * Versión 3.0 OPTIMIZADA
  * 
  * OPTIMIZACIONES IMPLEMENTADAS:
@@ -93,8 +93,8 @@ try {
     
     $total_paginas = max(1, ceil($total / $por_pagina));
 
-    // QUERY PRINCIPAL OPTIMIZADA
-    // sede y nombre vienen de tabla lugares via JOIN
+    // QUERY PRINCIPAL OPTIMIZADA (Migrada a MS SQL Server)
+    // Se usa OUTER APPLY en lugar de LEFT JOIN LATERAL y FETCH NEXT en lugar de LIMIT
     $sql_data = "
         SELECT 
             e.id_equipo,
@@ -112,17 +112,16 @@ try {
             last_event.correo_responsable,
             last_event.hostname
         FROM equipos e
-        LEFT JOIN LATERAL (
-            SELECT id_lugar, tipo_evento, correo_responsable, hostname
+        OUTER APPLY (
+            SELECT TOP 1 id_lugar, tipo_evento, correo_responsable, hostname
             FROM bitacora
             WHERE serial_equipo = e.serial
             ORDER BY id_evento DESC
-            LIMIT 1
-        ) AS last_event ON TRUE
+        ) AS last_event
         LEFT JOIN lugares l ON last_event.id_lugar = l.id
         $filtro_where
         ORDER BY $columna_orden $orden_dir
-        LIMIT :limit OFFSET :offset
+        OFFSET :offset ROWS FETCH NEXT :limit ROWS ONLY
     ";
 
     $stmt = $pdo->prepare($sql_data);

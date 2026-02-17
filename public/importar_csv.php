@@ -7,7 +7,7 @@
  * ✅ Carga por lotes (batch insert) - 100 filas a la vez
  * ✅ Detección automática de delimitadores
  * ✅ Validación robusta de datos
- * ✅ Límites de memoria razonables (512MB)
+ * ✅ Límites de memoria razonables (512MB) 
  * ✅ Transacciones agrupadas
  */
 
@@ -175,7 +175,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['archivo_csv'])) {
     } else {
         try {
             // Obtener bodega
-            $stmt_bodega = $pdo->prepare("SELECT id, sede, nombre FROM lugares WHERE nombre = 'Bodega de Tecnología' LIMIT 1");
+            $stmt_bodega = $pdo->prepare("SELECT TOP 1 id, sede, nombre FROM lugares WHERE nombre = 'Bodega de Tecnología'");
             $stmt_bodega->execute();
             $bodega = $stmt_bodega->fetch(PDO::FETCH_ASSOC);
 
@@ -281,7 +281,7 @@ function procesarBatch($pdo, $equipos, $bodega, &$exitos, &$errores) {
                 INSERT INTO bitacora (
                     serial_equipo, id_lugar, tipo_evento, 
                     correo_responsable, fecha_evento, tecnico_responsable, hostname, desc_evento
-                ) VALUES (?, ?, 'Alta', ?, NOW(), ?, ?, ?)
+                ) VALUES (?, ?, 'Alta', ?, GETDATE(), ?, ?, ?)
             ");
             $stmt_bit->execute([
                 $eq['serial'],
@@ -315,7 +315,7 @@ if ($exitos > 0) {
         $pdo->prepare("INSERT INTO auditoria_cambios 
             (fecha, usuario_ldap, usuario_nombre, usuario_rol, ip_origen, 
              tipo_accion, tabla_afectada, referencia, valor_anterior, valor_nuevo) 
-            VALUES (NOW(), ?, ?, ?, ?, 'IMPORTACION_CSV', 'equipos', ?, NULL, ?)")
+            VALUES (GETDATE(), ?, ?, ?, ?, 'IMPORTACION_CSV', 'equipos', ?, NULL, ?)")
             ->execute([
                 $usuario_ldap,
                 $usuario_nombre,

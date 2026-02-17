@@ -1,7 +1,7 @@
 <?php
 /**
  * public/revertir_baja.php
- * Módulo Forense: Reversión de Bajas
+ * Módulo Forense: Reversión de Bajas 
  * Corregido: Query exacta para bodega + eliminado sede/ubicacion redundantes.
  */
 require_once '../core/db.php';
@@ -32,7 +32,7 @@ if (isset($_GET['serial'])) {
         }
 
         // 2. Buscar Bodega de Tecnología — query exacta, sin LIKE peligroso
-        $stmt_bodega = $pdo->prepare("SELECT id FROM lugares WHERE nombre = ? LIMIT 1");
+        $stmt_bodega = $pdo->prepare("SELECT TOP 1 id FROM lugares WHERE nombre = ?");
         $stmt_bodega->execute(['Bodega de Tecnología']);
         $bodega = $stmt_bodega->fetch();
 
@@ -57,7 +57,7 @@ if (isset($_GET['serial'])) {
             $pdo->prepare("INSERT INTO auditoria_cambios 
                 (fecha, usuario_ldap, usuario_nombre, usuario_rol, ip_origen, 
                 tipo_accion, tabla_afectada, referencia, valor_anterior, valor_nuevo) 
-                VALUES (NOW(), ?, ?, ?, ?, 'REVERSION_BAJA', 'equipos', ?, 'Baja', 'Alta')")
+                VALUES (GETDATE(), ?, ?, ?, ?, 'REVERSION_BAJA', 'equipos', ?, 'Baja', 'Alta')")
                 ->execute([
                     $usuario_ldap,
                     $usuario_nombre,
@@ -76,7 +76,7 @@ if (isset($_GET['serial'])) {
                         serial_equipo, id_lugar,
                         tipo_evento, correo_responsable, tecnico_responsable, 
                         hostname, fecha_evento, desc_evento
-                    ) VALUES (?, ?, 'Alta', ?, ?, ?, NOW(), ?)";
+                    ) VALUES (?, ?, 'Alta', ?, ?, ?, GETDATE(), ?)";
         
         $pdo->prepare($sql_bit)->execute([
             $serial, 
