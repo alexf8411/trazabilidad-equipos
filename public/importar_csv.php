@@ -279,15 +279,13 @@ function procesarBatch($pdo, $equipos, $bodega, &$exitos, &$errores) {
             // Insertar en bitácora
             $stmt_bit = $pdo->prepare("
                 INSERT INTO bitacora (
-                    serial_equipo, id_lugar, sede, ubicacion, tipo_evento, 
+                    serial_equipo, id_lugar, tipo_evento, 
                     correo_responsable, fecha_evento, tecnico_responsable, hostname, desc_evento
-                ) VALUES (?, ?, ?, ?, 'Alta', ?, NOW(), ?, ?, ?)
+                ) VALUES (?, ?, 'Alta', ?, NOW(), ?, ?, ?)
             ");
             $stmt_bit->execute([
                 $eq['serial'],
                 $bodega['id'],
-                $bodega['sede'],
-                $bodega['nombre'],
                 $_SESSION['usuario_id'] ?? $_SESSION['nombre'],
                 $_SESSION['nombre'],
                 $eq['serial'],
