@@ -94,7 +94,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $usuario_rol,
                         $ip_cliente,
                         "Usuario: $correo_target",
-                        "Usuario eliminado del sistema"
+                        "Usuario eliminado - Rol anterior: " . ($_POST['rol_eliminar'] ?? 'Desconocido')
                     ]);
             } catch (Exception $e) {
                 error_log("Fallo auditoría eliminar usuario: " . $e->getMessage());
@@ -190,6 +190,7 @@ $usuarios = $pdo->query("SELECT * FROM usuarios_sistema ORDER BY fecha_registro 
                             <input type="hidden" name="accion" value="eliminar">
                             <input type="hidden" name="id_eliminar" value="<?php echo $usr['id_usuario']; ?>">
                             <input type="hidden" name="correo_eliminar" value="<?php echo $usr['correo_ldap']; ?>">
+                            <input type="hidden" name="rol_eliminar" value="<?php echo $usr['rol']; ?>">
                             <button type="submit" class="btn-del">Eliminar</button>
                         </form>
                     <?php endif; ?>
