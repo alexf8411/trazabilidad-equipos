@@ -49,43 +49,42 @@ function obtenerDatosDB($pdo, $db_name, $force_refresh = false) {
     
     try {
         // ================================================================
-        // 1. INFORMACIÓN GENERAL DE LA BASE DE DATOS
+        // 1. INFORMACIÓN GENERAL DE LA BASE DE DATOS (SIN PERMISOS DE SERVIDOR)
         // ================================================================
-        $stmt = $pdo->query("
-            SELECT 
-                DB_NAME() AS nombre_bd,
-                SERVERPROPERTY('ProductVersion') AS version_sql,
-                SERVERPROPERTY('ProductLevel') AS nivel,
-                SERVERPROPERTY('Edition') AS edicion
-        ");
-        $datos['info_bd'] = $stmt->fetch(PDO::FETCH_ASSOC);
+        // Solo información que no requiere VIEW SERVER STATE
+        $datos['info_bd'] = [
+            'nombre_bd' => DB_NAME(),
+            'version_sql' => 'SQL Server',
+            'nivel' => 'N/A (requiere permisos de servidor)',
+            'edicion' => 'N/A (requiere permisos de servidor)'
+        ];
         
-        // Tamaño total de la BD
+        // Tamaño total de la BD (solo archivos visibles)
         $stmt = $pdo->query("
             SELECT 
-                SUM(size * 8.0 / 1024) AS tamano_mb
+                SUM(CAST(size AS BIGINT) * 8.0 / 1024) AS tamano_mb
             FROM sys.database_files
         ");
         $size = $stmt->fetch(PDO::FETCH_ASSOC);
         $datos['info_bd']['tamano_total_mb'] = round($size['tamano_mb'], 2);
         
         // ================================================================
-        // 2. RESUMEN DE TABLAS (TOP 20 por tamaño)
+        // 2. RESUMEN DE TABLAS (TOP 20 por tamaño) - SIN dm_db_partition_stats
         // ================================================================
         $stmt = $pdo->query("
             SELECT TOP 20
                 t.name AS tabla,
-                SUM(a.total_pages) * 8 / 1024.0 AS tamano_mb,
-                SUM(a.used_pages) * 8 / 1024.0 AS usado_mb,
-                SUM(a.data_pages) * 8 / 1024.0 AS datos_mb,
-                p.rows AS filas
+                SUM(CAST(au.total_pages AS BIGINT)) * 8 / 1024.0 AS tamano_mb,
+                SUM(CAST(au.used_pages AS BIGINT)) * 8 / 1024.0 AS usado_mb,
+                SUM(CAST(au.data_pages AS BIGINT)) * 8 / 1024.0 AS datos_mb,
+                SUM(CASE WHEN i.index_id IN (0, 1) THEN p.rows ELSE 0 END) AS filas
             FROM sys.tables t
             INNER JOIN sys.indexes i ON t.object_id = i.object_id
             INNER JOIN sys.partitions p ON i.object_id = p.object_id AND i.index_id = p.index_id
-            INNER JOIN sys.allocation_units a ON p.partition_id = a.container_id
+            INNER JOIN sys.allocation_units au ON p.partition_id = au.container_id
             WHERE t.is_ms_shipped = 0
-            GROUP BY t.name, p.rows
-            ORDER BY SUM(a.total_pages) DESC
+            GROUP BY t.name
+            ORDER BY SUM(au.total_pages) DESC
         ");
         $datos['tablas'] = $stmt->fetchAll(PDO::FETCH_ASSOC);
         
@@ -114,7 +113,7 @@ function obtenerDatosDB($pdo, $db_name, $force_refresh = false) {
             $stmt->execute([$table_name]);
             $tabla['columnas'] = $stmt->fetchAll(PDO::FETCH_ASSOC);
             
-            // 3.2 ÍNDICES CON FRAGMENTACIÓN Y ESTADÍSTICAS DE USO
+            // 3.2 ÍNDICES (SIN FRAGMENTACIÓN - requiere permisos especiales)
             $stmt = $pdo->prepare("
                 SELECT 
                     i.name AS nombre,
@@ -129,23 +128,19 @@ function obtenerDatosDB($pdo, $db_name, $force_refresh = false) {
                         ORDER BY ic.key_ordinal
                         FOR XML PATH('')
                     ), 1, 2, '') AS columnas,
-                    ips.avg_fragmentation_in_percent AS fragmentacion,
-                    ips.page_count AS paginas,
-                    ius.user_seeks AS busquedas,
-                    ius.user_scans AS escaneos,
-                    ius.user_lookups AS lookups,
-                    ius.user_updates AS actualizaciones,
-                    ius.last_user_seek AS ultima_busqueda,
-                    ius.last_user_scan AS ultimo_escaneo
+                    NULL AS fragmentacion,
+                    NULL AS paginas,
+                    NULL AS busquedas,
+                    NULL AS escaneos,
+                    NULL AS lookups,
+                    NULL AS actualizaciones,
+                    NULL AS ultima_busqueda,
+                    NULL AS ultimo_escaneo
                 FROM sys.indexes i
-                LEFT JOIN sys.dm_db_index_physical_stats(DB_ID(), OBJECT_ID(?), NULL, NULL, 'LIMITED') ips 
-                    ON i.object_id = ips.object_id AND i.index_id = ips.index_id
-                LEFT JOIN sys.dm_db_index_usage_stats ius 
-                    ON i.object_id = ius.object_id AND i.index_id = ius.index_id AND ius.database_id = DB_ID()
                 WHERE i.object_id = OBJECT_ID(?)
                 ORDER BY i.index_id
             ");
-            $stmt->execute([$table_name, $table_name]);
+            $stmt->execute([$table_name]);
             $tabla['indices'] = $stmt->fetchAll(PDO::FETCH_ASSOC);
             
             // 3.3 FOREIGN KEYS (Relaciones)
@@ -195,49 +190,22 @@ function obtenerDatosDB($pdo, $db_name, $force_refresh = false) {
         }
         
         // ================================================================
-        // 4. ANÁLISIS DE FRAGMENTACIÓN GENERAL
+        // 4. ANÁLISIS DE FRAGMENTACIÓN GENERAL - DESHABILITADO
+        // Requiere VIEW SERVER STATE o VIEW DATABASE STATE
         // ================================================================
-        $stmt = $pdo->query("
-            SELECT 
-                OBJECT_NAME(ips.object_id) AS tabla,
-                i.name AS indice,
-                ips.avg_fragmentation_in_percent AS fragmentacion,
-                ips.page_count AS paginas
-            FROM sys.dm_db_index_physical_stats(DB_ID(), NULL, NULL, NULL, 'LIMITED') ips
-            INNER JOIN sys.indexes i ON ips.object_id = i.object_id AND ips.index_id = i.index_id
-            WHERE ips.avg_fragmentation_in_percent > 30
-                AND ips.page_count > 100
-                AND i.name IS NOT NULL
-            ORDER BY ips.avg_fragmentation_in_percent DESC
-        ");
-        $datos['indices_fragmentados'] = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $datos['indices_fragmentados'] = [];
+        
+        // Nota: Para habilitar esta función, el DBA debe otorgar:
+        // GRANT VIEW DATABASE STATE TO [usuario_app];
         
         // ================================================================
-        // 5. ÍNDICES NO UTILIZADOS
+        // 5. ÍNDICES NO UTILIZADOS - DESHABILITADO
+        // Requiere VIEW SERVER STATE o VIEW DATABASE STATE
         // ================================================================
-        $stmt = $pdo->query("
-            SELECT 
-                OBJECT_NAME(i.object_id) AS tabla,
-                i.name AS indice,
-                i.type_desc AS tipo,
-                (SELECT SUM(used_pages) * 8 / 1024.0 
-                 FROM sys.dm_db_partition_stats 
-                 WHERE object_id = i.object_id AND index_id = i.index_id) AS tamano_mb
-            FROM sys.indexes i
-            WHERE i.object_id > 100
-                AND i.type_desc <> 'HEAP'
-                AND i.is_primary_key = 0
-                AND i.is_unique_constraint = 0
-                AND NOT EXISTS (
-                    SELECT 1 
-                    FROM sys.dm_db_index_usage_stats ius
-                    WHERE ius.object_id = i.object_id 
-                        AND ius.index_id = i.index_id
-                        AND ius.database_id = DB_ID()
-                )
-            ORDER BY tamano_mb DESC
-        ");
-        $datos['indices_no_usados'] = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $datos['indices_no_usados'] = [];
+        
+        // Nota: Para habilitar esta función, el DBA debe otorgar:
+        // GRANT VIEW DATABASE STATE TO [usuario_app];
         
         // ================================================================
         // 6. ESTADÍSTICAS DESACTUALIZADAS
@@ -553,27 +521,18 @@ $cache_age = isset($_SESSION[$cache_time_key]) ? (time() - $_SESSION[$cache_time
         </div>
 
         <!-- ALERTAS DE MANTENIMIENTO -->
-        <?php if (count($datos['indices_fragmentados']) > 0 || count($datos['indices_no_usados']) > 0 || count($datos['estadisticas_viejas']) > 0): ?>
+        <?php if (count($datos['estadisticas_viejas']) > 0): ?>
         <div class="section-card">
             <h2>⚠️ Alertas de Mantenimiento</h2>
             
-            <?php if (count($datos['indices_fragmentados']) > 0): ?>
-                <div class="alert alert-warning" style="margin-bottom: 15px;">
-                    <strong>🔧 Índices Fragmentados:</strong> <?= count($datos['indices_fragmentados']) ?> índices requieren mantenimiento (>30% fragmentación)
-                </div>
-            <?php endif; ?>
+            <div class="alert alert-warning">
+                <strong>📉 Estadísticas Desactualizadas:</strong> <?= count($datos['estadisticas_viejas']) ?> estadísticas con más de 30 días sin actualizar
+            </div>
             
-            <?php if (count($datos['indices_no_usados']) > 0): ?>
-                <div class="alert alert-info" style="margin-bottom: 15px;">
-                    <strong>📦 Índices No Utilizados:</strong> <?= count($datos['indices_no_usados']) ?> índices sin uso detectados (candidatos a eliminar)
-                </div>
-            <?php endif; ?>
-            
-            <?php if (count($datos['estadisticas_viejas']) > 0): ?>
-                <div class="alert alert-warning">
-                    <strong>📉 Estadísticas Desactualizadas:</strong> <?= count($datos['estadisticas_viejas']) ?> estadísticas con más de 30 días sin actualizar
-                </div>
-            <?php endif; ?>
+            <div class="alert alert-info" style="margin-top: 15px;">
+                <strong>ℹ️ Nota:</strong> El análisis de fragmentación e índices no usados requiere permisos adicionales.<br>
+                El DBA puede habilitar esta función ejecutando: <code>GRANT VIEW DATABASE STATE TO [usuario_app]</code>
+            </div>
         </div>
         <?php endif; ?>
 
@@ -691,16 +650,16 @@ $cache_age = isset($_SESSION[$cache_time_key]) ? (time() - $_SESSION[$cache_time
                                                         <div class="fragmentation-fill <?= $frag_class ?>" style="width: <?= min($idx['fragmentacion'], 100) ?>%"></div>
                                                     </div>
                                                 <?php else: ?>
-                                                    N/A
+                                                    <small style="color: #999;">Requiere permisos VIEW DATABASE STATE</small>
                                                 <?php endif; ?>
                                             </td>
                                             <td>
-                                                <?php if ($idx['busquedas'] || $idx['escaneos'] || $idx['lookups']): ?>
+                                                <?php if ($idx['busquedas'] !== null || $idx['escaneos'] !== null): ?>
                                                     Seeks: <?= number_format($idx['busquedas'] ?? 0) ?><br>
                                                     Scans: <?= number_format($idx['escaneos'] ?? 0) ?><br>
                                                     Lookups: <?= number_format($idx['lookups'] ?? 0) ?>
                                                 <?php else: ?>
-                                                    <span class="stat-badge danger">Sin uso</span>
+                                                    <small style="color: #999;">Requiere permisos VIEW DATABASE STATE</small>
                                                 <?php endif; ?>
                                             </td>
                                             <td>
@@ -788,8 +747,8 @@ $cache_age = isset($_SESSION[$cache_time_key]) ? (time() - $_SESSION[$cache_time
             <?php endforeach; ?>
         </div>
 
-        <!-- PLAN DE MANTENIMIENTO -->
-        <?php if (count($datos['indices_fragmentados']) > 0): ?>
+        <!-- PLAN DE MANTENIMIENTO (solo si hay datos disponibles) -->
+        <?php if (false): // Deshabilitado - requiere permisos VIEW DATABASE STATE ?>
         <div class="section-card">
             <h2>🔧 Plan de Mantenimiento Recomendado</h2>
             <h4 style="margin-top: 0;">Índices Fragmentados (>30%)</h4>
