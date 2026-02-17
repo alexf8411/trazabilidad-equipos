@@ -36,11 +36,15 @@ try {
     $fecha_fin = clone $fecha_compra;
     $fecha_fin->modify("+$vida_util years");
 
-    // Obtener historial
+    // Obtener historial — sede y nombre vienen de tabla lugares via JOIN
     $stmt_hist = $pdo->prepare("
-        SELECT * FROM bitacora 
-        WHERE serial_equipo = ? 
-        ORDER BY fecha_evento DESC
+        SELECT b.*,
+               l.sede AS sede_lugar,
+               l.nombre AS nombre_lugar
+        FROM bitacora b
+        LEFT JOIN lugares l ON b.id_lugar = l.id
+        WHERE b.serial_equipo = ? 
+        ORDER BY b.fecha_evento DESC
     ");
     $stmt_hist->execute([$serial]);
     $historial = $stmt_hist->fetchAll(PDO::FETCH_ASSOC);
@@ -221,7 +225,7 @@ try {
                             <div class="timeline-details">
                                 <div>
                                     <strong>📍 Ubicación:</strong><br>
-                                    <?= htmlspecialchars($ev['sede'] . ' - ' . $ev['ubicacion']) ?>
+                                    <?= htmlspecialchars(($ev['sede_lugar'] ?? 'Sin sede') . ' - ' . ($ev['nombre_lugar'] ?? 'Sin ubicación')) ?>
                                 </div>
 
                                 <div>
