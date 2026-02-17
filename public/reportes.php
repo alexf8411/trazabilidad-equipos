@@ -1,18 +1,26 @@
 <?php
 /**
- * URTRACK - Reportes y Business Intelligence
- * Versión 3.0 FINAL
+ * URTRACK - Reportes y Business Intelligence 
+ * Versión 3.0 FINAL - SQL SERVER
  * 
  * CAMBIOS APLICADOS:
  * ✅ KPIs clicables (8 totales)
  * ✅ Sin badge de caché
  * ✅ Sin KPI "Valor Inventario"
  * ✅ Todos los reportes desde KPIs funcionando
- * ✅ LATERAL JOIN (no subconsultas)
+ * ✅ OUTER APPLY (SQL Server)
  * ✅ Caché en sesión (5 minutos)
  * ✅ Límites estrictos en queries
  * ✅ CSS centralizado
  * ✅ Responsive completo
+ * 
+ * MIGRACIÓN SQL SERVER:
+ * ✅ LATERAL JOIN → OUTER APPLY
+ * ✅ NOW() → GETDATE()
+ * ✅ TIMESTAMPDIFF → DATEDIFF
+ * ✅ DATE_SUB → DATEADD
+ * ✅ CURDATE() → CAST(GETDATE() AS DATE)
+ * ✅ LIMIT → TOP / OFFSET FETCH
  */
 
 require_once '../core/db.php';
@@ -65,15 +73,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $sql = "SELECT e.placa_ur, e.serial, e.marca, e.modelo,
                     l.sede, l.nombre AS ubicacion, last_event.fecha_evento, last_event.tecnico_responsable
                     FROM equipos e
-                    LEFT JOIN LATERAL (
-                        SELECT tipo_evento, id_lugar, fecha_evento, tecnico_responsable
+                    OUTER APPLY (
+                        SELECT TOP 1 tipo_evento, id_lugar, fecha_evento, tecnico_responsable
                         FROM bitacora WHERE serial_equipo = e.serial
-                        ORDER BY id_evento DESC LIMIT 1
-                    ) AS last_event ON TRUE
+                        ORDER BY id_evento DESC
+                    ) AS last_event
                     LEFT JOIN lugares l ON last_event.id_lugar = l.id
                     WHERE e.estado_maestro = 'Alta'
                     AND last_event.tipo_evento IN ('Devolución', 'Alta', 'Alistamiento')
-                    LIMIT 10000";
+                    ORDER BY e.placa_ur
+                    OFFSET 0 ROWS FETCH NEXT 10000 ROWS ONLY";
             
             $stmt = $pdo->query($sql);
             while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) { 
@@ -95,15 +104,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $sql = "SELECT e.placa_ur, e.serial, e.marca, e.modelo,
                     last_event.correo_responsable, l.sede, l.nombre AS ubicacion, last_event.fecha_evento, last_event.hostname
                     FROM equipos e
-                    LEFT JOIN LATERAL (
-                        SELECT tipo_evento, correo_responsable, id_lugar, fecha_evento, hostname
+                    OUTER APPLY (
+                        SELECT TOP 1 tipo_evento, correo_responsable, id_lugar, fecha_evento, hostname
                         FROM bitacora WHERE serial_equipo = e.serial
-                        ORDER BY id_evento DESC LIMIT 1
-                    ) AS last_event ON TRUE
+                        ORDER BY id_evento DESC
+                    ) AS last_event
                     LEFT JOIN lugares l ON last_event.id_lugar = l.id
                     WHERE e.estado_maestro = 'Alta'
                     AND last_event.tipo_evento IN ('Asignación', 'Asignacion_Masiva')
-                    LIMIT 10000";
+                    ORDER BY e.placa_ur
+                    OFFSET 0 ROWS FETCH NEXT 10000 ROWS ONLY";
             
             $stmt = $pdo->query($sql);
             while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) { 
@@ -125,14 +135,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             fputcsv($output, ['ID_EVENTO', 'FECHA', 'TIPO', 'PLACA', 'SERIAL', 'EQUIPO', 'SEDE', 'UBICACION', 'RESPONSABLE', 'REALIZADO_POR']);
             
-            $sql = "SELECT b.id_evento, b.fecha_evento, b.tipo_evento, e.placa_ur, b.serial_equipo,
+            $sql = "SELECT TOP 50000 b.id_evento, b.fecha_evento, b.tipo_evento, e.placa_ur, b.serial_equipo,
                     CONCAT(e.marca, ' ', e.modelo) as equipo, l.sede, l.nombre AS ubicacion, b.correo_responsable, b.tecnico_responsable
                     FROM bitacora b
                     JOIN equipos e ON b.serial_equipo = e.serial
                     LEFT JOIN lugares l ON b.id_lugar = l.id
                     WHERE b.fecha_evento BETWEEN ? AND ?
-                    ORDER BY b.fecha_evento DESC
-                    LIMIT 50000";
+                    ORDER BY b.fecha_evento DESC";
             
             $stmt = $pdo->prepare($sql);
             $stmt->execute([$inicio, $fin]);
@@ -150,15 +159,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             fputcsv($output, ['PLACA', 'SERIAL', 'EQUIPO', 'FECHA_COMPRA', 'VIDA_UTIL', 'ANTIGUEDAD', 'PORCENTAJE_USO']);
             
-            $sql = "SELECT e.placa_ur, e.serial, CONCAT(e.marca, ' ', e.modelo),
+            $sql = "SELECT TOP 5000 e.placa_ur, e.serial, CONCAT(e.marca, ' ', e.modelo),
                     e.fecha_compra, e.vida_util,
-                    TIMESTAMPDIFF(YEAR, e.fecha_compra, NOW()) AS antiguedad,
-                    ROUND((TIMESTAMPDIFF(YEAR, e.fecha_compra, NOW()) / e.vida_util) * 100, 1) AS porcentaje
+                    DATEDIFF(YEAR, e.fecha_compra, GETDATE()) AS antiguedad,
+                    ROUND((CAST(DATEDIFF(YEAR, e.fecha_compra, GETDATE()) AS FLOAT) / e.vida_util) * 100, 1) AS porcentaje
                     FROM equipos e
                     WHERE e.estado_maestro = 'Alta'
-                    AND TIMESTAMPDIFF(YEAR, e.fecha_compra, NOW()) >= (e.vida_util * 0.8)
-                    ORDER BY porcentaje DESC
-                    LIMIT 5000";
+                    AND DATEDIFF(YEAR, e.fecha_compra, GETDATE()) >= (e.vida_util * 0.8)
+                    ORDER BY porcentaje DESC";
             
             $stmt = $pdo->query($sql);
             while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) { fputcsv($output, $row); }
@@ -175,22 +183,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             fputcsv($output, ['PLACA', 'SERIAL', 'EQUIPO', 'UBICACION', 'ULTIMO_MOVIMIENTO', 'MESES_INACTIVO']);
             
-            $sql = "SELECT e.placa_ur, e.serial, CONCAT(e.marca, ' ', e.modelo),
+            $sql = "SELECT TOP 5000 e.placa_ur, e.serial, CONCAT(e.marca, ' ', e.modelo),
                     l.nombre AS ubicacion, last_event.fecha_evento,
-                    TIMESTAMPDIFF(MONTH, last_event.fecha_evento, NOW()) AS meses
+                    DATEDIFF(MONTH, last_event.fecha_evento, GETDATE()) AS meses
                     FROM equipos e
-                    LEFT JOIN LATERAL (
-                        SELECT tipo_evento, id_lugar, fecha_evento
+                    OUTER APPLY (
+                        SELECT TOP 1 tipo_evento, id_lugar, fecha_evento
                         FROM bitacora WHERE serial_equipo = e.serial
-                        ORDER BY id_evento DESC LIMIT 1
-                    ) AS last_event ON TRUE
+                        ORDER BY id_evento DESC
+                    ) AS last_event
                     LEFT JOIN lugares l ON last_event.id_lugar = l.id
                     WHERE e.estado_maestro = 'Alta'
                     AND last_event.tipo_evento IN ('Devolución', 'Alta', 'Alistamiento')
                     AND l.nombre LIKE '%Bodega%'
-                    AND last_event.fecha_evento < DATE_SUB(NOW(), INTERVAL 6 MONTH)
-                    ORDER BY meses DESC
-                    LIMIT 5000";
+                    AND last_event.fecha_evento < DATEADD(MONTH, -6, GETDATE())
+                    ORDER BY meses DESC";
             
             $stmt = $pdo->query($sql);
             while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) { fputcsv($output, $row); }
@@ -207,13 +214,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             fputcsv($output, ['FECHA_BAJA', 'MOTIVO', 'PLACA', 'SERIAL', 'EQUIPO', 'VALOR_PERDIDO', 'TECNICO']);
             
-            $sql = "SELECT b.fecha_evento, b.desc_evento, e.placa_ur, e.serial,
+            $sql = "SELECT TOP 10000 b.fecha_evento, b.desc_evento, e.placa_ur, e.serial,
                     CONCAT(e.marca, ' ', e.modelo), e.precio, b.tecnico_responsable
                     FROM bitacora b
                     JOIN equipos e ON b.serial_equipo = e.serial
                     WHERE b.tipo_evento = 'Baja'
-                    ORDER BY b.fecha_evento DESC
-                    LIMIT 10000";
+                    ORDER BY b.fecha_evento DESC";
             
             $stmt = $pdo->query($sql);
             while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) { fputcsv($output, $row); }
@@ -241,10 +247,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                               'SEDE', 'UBICACION', 'RESPONSABLE', 'TECNICO']);
             
             $sql = "
-                SELECT 
+                SELECT TOP 10000
                     e.placa_ur, e.serial, e.marca, e.modelo, e.modalidad, e.precio,
                     e.fecha_compra, e.vida_util,
-                    TIMESTAMPDIFF(YEAR, e.fecha_compra, CURDATE()) AS antiguedad,
+                    DATEDIFF(YEAR, e.fecha_compra, CAST(GETDATE() AS DATE)) AS antiguedad,
                     e.estado_maestro,
                     last_event.tipo_evento, last_event.fecha_evento,
                     CASE 
@@ -255,16 +261,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     END AS estado_op,
                     l.sede, l.nombre AS ubicacion, last_event.correo_responsable, last_event.tecnico_responsable
                 FROM equipos e
-                LEFT JOIN LATERAL (
-                    SELECT tipo_evento, fecha_evento, id_lugar, correo_responsable, tecnico_responsable
+                OUTER APPLY (
+                    SELECT TOP 1 tipo_evento, fecha_evento, id_lugar, correo_responsable, tecnico_responsable
                     FROM bitacora
                     WHERE serial_equipo = e.serial
                     ORDER BY id_evento DESC
-                    LIMIT 1
-                ) AS last_event ON TRUE
+                ) AS last_event
                 LEFT JOIN lugares l ON last_event.id_lugar = l.id
                 ORDER BY e.placa_ur
-                LIMIT 10000
             ";
             
             $stmt = $pdo->query($sql);
@@ -287,14 +291,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             fputcsv($output, ['ID_EVENTO', 'FECHA', 'TIPO', 'PLACA', 'SERIAL', 'EQUIPO', 'SEDE', 'UBICACION', 'RESPONSABLE', 'REALIZADO_POR']);
             
-            $sql = "SELECT b.id_evento, b.fecha_evento, b.tipo_evento, e.placa_ur, b.serial_equipo,
+            $sql = "SELECT TOP 50000 b.id_evento, b.fecha_evento, b.tipo_evento, e.placa_ur, b.serial_equipo,
                     CONCAT(e.marca, ' ', e.modelo) as equipo, l.sede, l.nombre AS ubicacion, b.correo_responsable, b.tecnico_responsable
                     FROM bitacora b
                     JOIN equipos e ON b.serial_equipo = e.serial
                     LEFT JOIN lugares l ON b.id_lugar = l.id
                     WHERE b.fecha_evento BETWEEN ? AND ?
-                    ORDER BY b.fecha_evento DESC
-                    LIMIT 50000";
+                    ORDER BY b.fecha_evento DESC";
             
             $stmt = $pdo->prepare($sql);
             $stmt->execute([$inicio, $fin]);
@@ -315,13 +318,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             fputcsv($output, ['FECHA_INGRESO', 'ORDEN_COMPRA', 'PLACA', 'SERIAL', 'EQUIPO', 'MODALIDAD', 'VALOR']);
             
-            $sql = "SELECT b.fecha_evento, b.desc_evento, e.placa_ur, e.serial,
+            $sql = "SELECT TOP 10000 b.fecha_evento, b.desc_evento, e.placa_ur, e.serial,
                     CONCAT(e.marca, ' ', e.modelo), e.modalidad, e.precio
                     FROM bitacora b
                     JOIN equipos e ON b.serial_equipo = e.serial
                     WHERE b.tipo_evento = 'Alta' AND b.fecha_evento BETWEEN ? AND ?
-                    ORDER BY b.fecha_evento DESC
-                    LIMIT 10000";
+                    ORDER BY b.fecha_evento DESC";
             
             $stmt = $pdo->prepare($sql);
             $stmt->execute([$inicio, $fin]);
@@ -342,13 +344,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             fputcsv($output, ['FECHA_BAJA', 'MOTIVO', 'PLACA', 'SERIAL', 'EQUIPO', 'VALOR_PERDIDO', 'TECNICO']);
             
-            $sql = "SELECT b.fecha_evento, b.desc_evento, e.placa_ur, e.serial,
+            $sql = "SELECT TOP 10000 b.fecha_evento, b.desc_evento, e.placa_ur, e.serial,
                     CONCAT(e.marca, ' ', e.modelo), e.precio, b.tecnico_responsable
                     FROM bitacora b
                     JOIN equipos e ON b.serial_equipo = e.serial
                     WHERE b.tipo_evento = 'Baja' AND b.fecha_evento BETWEEN ? AND ?
-                    ORDER BY b.fecha_evento DESC
-                    LIMIT 10000";
+                    ORDER BY b.fecha_evento DESC";
             
             $stmt = $pdo->prepare($sql);
             $stmt->execute([$inicio, $fin]);
@@ -366,24 +367,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             fputcsv($output, ['PLACA', 'SERIAL', 'EQUIPO', 'RESPONSABLE', 'SEDE', 'UBICACION', 'DLO', 'SCCM', 'ANTIVIRUS']);
             
-            $sql = "SELECT e.placa_ur, e.serial, CONCAT(e.marca, ' ', e.modelo),
+            $sql = "SELECT TOP 10000 e.placa_ur, e.serial, CONCAT(e.marca, ' ', e.modelo),
                     last_event.correo_responsable, l.sede, l.nombre AS ubicacion,
                     CASE WHEN last_event.check_dlo = 1 THEN 'SI' ELSE 'NO' END,
                     CASE WHEN last_event.check_sccm = 1 THEN 'SI' ELSE 'NO' END,
                     CASE WHEN last_event.check_antivirus = 1 THEN 'SI' ELSE 'NO' END
                     FROM equipos e
-                    LEFT JOIN LATERAL (
-                        SELECT correo_responsable, id_lugar, tipo_evento, check_dlo, check_sccm, check_antivirus
+                    OUTER APPLY (
+                        SELECT TOP 1 correo_responsable, id_lugar, tipo_evento, check_dlo, check_sccm, check_antivirus
                         FROM bitacora
                         WHERE serial_equipo = e.serial
                         ORDER BY id_evento DESC
-                        LIMIT 1
-                    ) AS last_event ON TRUE
+                    ) AS last_event
                     LEFT JOIN lugares l ON last_event.id_lugar = l.id
                     WHERE e.estado_maestro = 'Alta'
                     AND last_event.tipo_evento IN ('Asignación', 'Asignacion_Masiva')
-                    AND (last_event.check_dlo = 0 OR last_event.check_sccm = 0 OR last_event.check_antivirus = 0)
-                    LIMIT 10000";
+                    AND (last_event.check_dlo = 0 OR last_event.check_sccm = 0 OR last_event.check_antivirus = 0)";
             
             $stmt = $pdo->query($sql);
             while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) { fputcsv($output, $row); }
@@ -400,14 +399,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             fputcsv($output, ['PLACA', 'SERIAL', 'EQUIPO', 'FECHA_COMPRA', 'VIDA_UTIL', 'ANTIGUEDAD', 'ESTADO']);
             
-            $sql = "SELECT e.placa_ur, e.serial, CONCAT(e.marca, ' ', e.modelo),
+            $sql = "SELECT TOP 5000 e.placa_ur, e.serial, CONCAT(e.marca, ' ', e.modelo),
                     e.fecha_compra, e.vida_util,
-                    TIMESTAMPDIFF(YEAR, e.fecha_compra, NOW()) AS antiguedad,
+                    DATEDIFF(YEAR, e.fecha_compra, GETDATE()) AS antiguedad,
                     e.estado_maestro
                     FROM equipos e
-                    WHERE TIMESTAMPDIFF(YEAR, e.fecha_compra, NOW()) > e.vida_util
-                    ORDER BY antiguedad DESC
-                    LIMIT 5000";
+                    WHERE DATEDIFF(YEAR, e.fecha_compra, GETDATE()) > e.vida_util
+                    ORDER BY antiguedad DESC";
             
             $stmt = $pdo->query($sql);
             while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) { fputcsv($output, $row); }
@@ -430,13 +428,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             fputcsv($output, ['FECHA', 'TIPO_EVENTO', 'SEDE', 'UBICACION', 'RESPONSABLE', 'HOSTNAME', 'TECNICO', 'DETALLES']);
             
-            $sql = "SELECT b.fecha_evento, b.tipo_evento, l.sede, l.nombre AS ubicacion,
+            $sql = "SELECT TOP 1000 b.fecha_evento, b.tipo_evento, l.sede, l.nombre AS ubicacion,
                     b.correo_responsable, b.hostname, b.tecnico_responsable, b.desc_evento
                     FROM bitacora b
                     LEFT JOIN lugares l ON b.id_lugar = l.id
                     WHERE b.serial_equipo = ?
-                    ORDER BY b.id_evento ASC
-                    LIMIT 1000";
+                    ORDER BY b.id_evento ASC";
             
             $stmt = $pdo->prepare($sql);
             $stmt->execute([$serial]);
@@ -478,13 +475,12 @@ function obtenerDatosReportes($pdo, $force_refresh = false, $time_filter = 'all'
         $datos['en_bodega'] = $pdo->query("
             SELECT COUNT(DISTINCT e.serial)
             FROM equipos e
-            LEFT JOIN LATERAL (
-                SELECT tipo_evento
+            OUTER APPLY (
+                SELECT TOP 1 tipo_evento
                 FROM bitacora
                 WHERE serial_equipo = e.serial
                 ORDER BY id_evento DESC
-                LIMIT 1
-            ) AS last_event ON TRUE
+            ) AS last_event
             WHERE e.estado_maestro = 'Alta'
             AND last_event.tipo_evento IN ('Devolución', 'Alta', 'Alistamiento')
         ")->fetchColumn();
@@ -493,34 +489,31 @@ function obtenerDatosReportes($pdo, $force_refresh = false, $time_filter = 'all'
         
         // Productividad mes
         $mes_actual = date('Y-m');
-        $datos['movs_mes'] = $pdo->query("SELECT COUNT(*) FROM bitacora WHERE fecha_evento LIKE '$mes_actual%' LIMIT 1000")->fetchColumn();
+        $datos['movs_mes'] = $pdo->query("SELECT COUNT(*) FROM bitacora WHERE fecha_evento LIKE '$mes_actual%'")->fetchColumn();
         
         // Próximos a fin de vida (>80% antigüedad)
         $datos['fin_vida'] = $pdo->query("
             SELECT COUNT(*)
             FROM equipos
             WHERE estado_maestro = 'Alta'
-            AND TIMESTAMPDIFF(YEAR, fecha_compra, NOW()) >= (vida_util * 0.8)
-            LIMIT 1000
+            AND DATEDIFF(YEAR, fecha_compra, GETDATE()) >= (vida_util * 0.8)
         ")->fetchColumn();
         
         // Sin movimiento 6+ meses (SOLO BODEGA)
         $datos['sin_movimiento'] = $pdo->query("
             SELECT COUNT(DISTINCT e.serial)
             FROM equipos e
-            LEFT JOIN LATERAL (
-                SELECT tipo_evento, fecha_evento, id_lugar
+            OUTER APPLY (
+                SELECT TOP 1 tipo_evento, fecha_evento, id_lugar
                 FROM bitacora
                 WHERE serial_equipo = e.serial
                 ORDER BY id_evento DESC
-                LIMIT 1
-            ) AS last_event ON TRUE
+            ) AS last_event
             LEFT JOIN lugares l ON last_event.id_lugar = l.id
             WHERE e.estado_maestro = 'Alta'
             AND last_event.tipo_evento IN ('Devolución', 'Alta', 'Alistamiento')
             AND l.nombre LIKE '%Bodega%'
-            AND last_event.fecha_evento < DATE_SUB(NOW(), INTERVAL 6 MONTH)
-            LIMIT 1000
+            AND last_event.fecha_evento < DATEADD(MONTH, -6, GETDATE())
         ")->fetchColumn();
         
         // Tasa siniestralidad
@@ -531,41 +524,37 @@ function obtenerDatosReportes($pdo, $force_refresh = false, $time_filter = 'all'
         $datos['sin_compliance'] = $pdo->query("
             SELECT COUNT(DISTINCT e.serial)
             FROM equipos e
-            LEFT JOIN LATERAL (
-                SELECT tipo_evento, check_dlo, check_sccm, check_antivirus
+            OUTER APPLY (
+                SELECT TOP 1 tipo_evento, check_dlo, check_sccm, check_antivirus
                 FROM bitacora
                 WHERE serial_equipo = e.serial
                 ORDER BY id_evento DESC
-                LIMIT 1
-            ) AS last_event ON TRUE
+            ) AS last_event
             WHERE e.estado_maestro = 'Alta'
             AND last_event.tipo_evento IN ('Asignación', 'Asignacion_Masiva')
             AND (last_event.check_dlo = 0 OR last_event.check_sccm = 0 OR last_event.check_antivirus = 0)
-            LIMIT 1000
         ")->fetchColumn();
         
         // GRÁFICAS
         // Modalidad
-        $stmt = $pdo->query("SELECT modalidad, COUNT(*) as cant FROM equipos GROUP BY modalidad LIMIT 20");
+        $stmt = $pdo->query("SELECT TOP 20 modalidad, COUNT(*) as cant FROM equipos GROUP BY modalidad");
         $raw = $stmt->fetchAll(PDO::FETCH_ASSOC);
         $datos['mod_labels'] = array_column($raw, 'modalidad');
         $datos['mod_data'] = array_column($raw, 'cant');
         
         // Sedes
         $stmt = $pdo->query("
-            SELECT l.sede, COUNT(DISTINCT e.serial) as cant
+            SELECT TOP 50 l.sede, COUNT(DISTINCT e.serial) as cant
             FROM equipos e
-            LEFT JOIN LATERAL (
-                SELECT id_lugar
+            OUTER APPLY (
+                SELECT TOP 1 id_lugar
                 FROM bitacora
                 WHERE serial_equipo = e.serial
                 ORDER BY id_evento DESC
-                LIMIT 1
-            ) AS last_event ON TRUE
+            ) AS last_event
             LEFT JOIN lugares l ON last_event.id_lugar = l.id
             WHERE e.estado_maestro = 'Alta'
             GROUP BY l.sede
-            LIMIT 50
         ");
         $raw = $stmt->fetchAll(PDO::FETCH_ASSOC);
         $datos['sede_labels'] = array_column($raw, 'sede');
@@ -573,12 +562,11 @@ function obtenerDatosReportes($pdo, $force_refresh = false, $time_filter = 'all'
         
         // Top técnicos
         $stmt = $pdo->query("
-            SELECT tecnico_responsable, COUNT(*) as total
+            SELECT TOP 10 tecnico_responsable, COUNT(*) as total
             FROM bitacora
             WHERE tecnico_responsable IS NOT NULL AND tecnico_responsable != ''
             GROUP BY tecnico_responsable
             ORDER BY total DESC
-            LIMIT 10
         ");
         $raw = $stmt->fetchAll(PDO::FETCH_ASSOC);
         $datos['tec_labels'] = array_map(function($t) {
