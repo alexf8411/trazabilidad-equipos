@@ -1,8 +1,11 @@
 <?php
 /**
  * public/auditoria.php
- * Centro de Evidencia Forense - Versión 2.0
- * Actualizado con nueva estructura de tablas
+ * Centro de Evidencia Forense - Versión 2.1 SQL SERVER
+ * 
+ * MIGRACIÓN SQL SERVER:
+ * ✅ LIMIT → TOP (2 queries)
+ * ✅ JavaScript extraído a auditoria.js
  */
 require_once '../core/session.php';
 require_once '../core/db.php';
@@ -17,17 +20,15 @@ if (!in_array($_SESSION['rol'], ['Administrador', 'Auditor'])) {
 try {
     // A. Logs de Acceso (Últimos 100)
     $stmt_login = $pdo->query("
-        SELECT * FROM auditoria_acceso 
-        ORDER BY fecha_hora DESC 
-        LIMIT 100
+        SELECT TOP 100 * FROM auditoria_acceso 
+        ORDER BY fecha_hora DESC
     ");
     $logs_login = $stmt_login->fetchAll();
 
     // B. Logs de Cambios Administrativos (Últimos 100)
     $stmt_cambios = $pdo->query("
-        SELECT * FROM auditoria_cambios 
-        ORDER BY fecha DESC 
-        LIMIT 100
+        SELECT TOP 100 * FROM auditoria_cambios 
+        ORDER BY fecha DESC
     ");
     $logs_cambios = $stmt_cambios->fetchAll();
 
@@ -67,7 +68,7 @@ function getBadgeTipo($tipo) {
 <head>
     <meta charset="UTF-8">
     <title>Auditoría Integral - URTRACK</title>
-    <link rel="stylesheet" href="css/urtrack-styles.css">
+    <link rel="stylesheet" href="../css/urtrack-styles.css">
     <style>
         .audit-container { max-width: 1400px; margin: 0 auto; padding: 20px; }
         
@@ -229,45 +230,8 @@ function getBadgeTipo($tipo) {
     <?php endif; ?>
 </div>
 
-<script>
-function openTab(evt, tabName) {
-    var tabcontent = document.getElementsByClassName("tab-content");
-    for (var i = 0; i < tabcontent.length; i++) {
-        tabcontent[i].classList.remove("active");
-    }
-    
-    var tablinks = document.getElementsByClassName("tab-btn");
-    for (var i = 0; i < tablinks.length; i++) {
-        tablinks[i].classList.remove("active");
-    }
-    
-    document.getElementById(tabName).classList.add("active");
-    evt.currentTarget.classList.add("active");
-}
-
-function exportarCSV(tipo) {
-    var tabla = tipo === 'cambios' ? 'tabla-cambios' : 'tabla-accesos';
-    var csv = [];
-    var rows = document.querySelectorAll('#' + tabla + ' tr');
-    
-    for (var i = 0; i < rows.length; i++) {
-        var row = [], cols = rows[i].querySelectorAll('td, th');
-        for (var j = 0; j < cols.length; j++) {
-            var texto = cols[j].innerText.replace(/"/g, '""');
-            row.push('"' + texto + '"');
-        }
-        csv.push(row.join(','));
-    }
-    
-    var csvFile = new Blob([csv.join('\n')], {type: 'text/csv'});
-    var downloadLink = document.createElement('a');
-    downloadLink.download = 'auditoria_' + tipo + '_' + new Date().toISOString().slice(0,10) + '.csv';
-    downloadLink.href = window.URL.createObjectURL(csvFile);
-    downloadLink.style.display = 'none';
-    document.body.appendChild(downloadLink);
-    downloadLink.click();
-}
-</script>
+<!-- JavaScript extraído a archivo separado -->
+<script src="js/auditoria.js"></script>
 
 </body>
 </html>
