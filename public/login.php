@@ -6,10 +6,11 @@ require_once '../core/auth.php';
 $error_msg = "";
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $user = trim($_POST['username']);
-    $pass = $_POST['password'];
+    // Variables con prefijo login_ para evitar colisión con db.php
+    $login_user = trim($_POST['username']);
+    $login_pass = $_POST['password'];
 
-    if (!empty($user) && !empty($pass)) {
+    if (!empty($login_user) && !empty($login_pass)) {
         
         $ip_cliente = $_SERVER['REMOTE_ADDR'];
         
@@ -19,24 +20,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $sqlRol = "SELECT id_usuario, rol, nombre_completo FROM usuarios_sistema 
                    WHERE correo_ldap = ? AND estado = 'Activo' LIMIT 1";
         $stmtRol = $pdo->prepare($sqlRol);
-        $stmtRol->execute([$user]); 
+        $stmtRol->execute([$login_user]); 
         $usuarioLocal = $stmtRol->fetch();
         
         if (!$usuarioLocal) {
             // Usuario NO está en la lista blanca de URTRACK
             // Rechazar inmediatamente sin intentar LDAP ni registrar en auditoría
-            $error_msg = "Acceso denegado: El usuario '$user' no está autorizado.";
+            $error_msg = "Acceso denegado: El usuario '$login_user' no está autorizado.";
         } else {
             // Usuario SÍ está autorizado en URTRACK → validar contra LDAP
-            $resultado = autenticar_usuario($user, $pass);
+            $resultado = autenticar_usuario($login_user, $login_pass);
 
             if ($resultado['success']) {
                 // CASO A: LDAP OK + RBAC OK → Login exitoso
-                $nombre_ldap = $resultado['data']['nombre'] ?? $user;
+                $nombre_ldap = $resultado['data']['nombre'] ?? $login_user;
                 
                 regenerar_sesion_segura();
                 
-                $_SESSION['usuario_id'] = $user; 
+                $_SESSION['usuario_id'] = $login_user; 
                 $_SESSION['nombre']     = $nombre_ldap; 
                 $_SESSION['rol']        = $usuarioLocal['rol']; 
                 $_SESSION['depto']      = $resultado['data']['departamento'];
@@ -47,7 +48,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $pdo->prepare("INSERT INTO auditoria_acceso 
                         (fecha_hora, usuario_ldap, usuario_nombre, ip_acceso, resultado)
                         VALUES (NOW(), ?, ?, ?, 'Login_Exitoso')")
-                        ->execute([$user, $nombre_ldap, $ip_cliente]);
+                        ->execute([$login_user, $nombre_ldap, $ip_cliente]);
                 } catch (Exception $e) {
                     error_log("Fallo auditoría login exitoso: " . $e->getMessage());
                 }
@@ -57,7 +58,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             } else {
                 // CASO B: Usuario autorizado pero falló LDAP
-                // Estos SÍ son relevantes porque son usuarios reales
                 $error_msg  = $resultado['message'];
                 $error_code = $resultado['error_code'] ?? 'OTRO';
 
@@ -70,16 +70,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 } elseif ($error_code === '52e') {
                     $resultado_auditoria = 'Login_Fallido';
                 } else {
-                    // Error de conexión u otro → registrar como fallo genérico
                     $resultado_auditoria = 'Login_Fallido';
                 }
 
-                // AUDITORÍA — Fallo de usuario autorizado (SIEMPRE registrar)
+                // AUDITORÍA — Fallo de usuario autorizado
                 try {
                     $pdo->prepare("INSERT INTO auditoria_acceso 
                         (fecha_hora, usuario_ldap, usuario_nombre, ip_acceso, resultado)
                         VALUES (NOW(), ?, NULL, ?, ?)")
-                        ->execute([$user, $ip_cliente, $resultado_auditoria]);
+                        ->execute([$login_user, $ip_cliente, $resultado_auditoria]);
                 } catch (Exception $e) {
                     error_log("Fallo auditoría login fallido: " . $e->getMessage());
                 }
@@ -91,3 +90,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 ?>
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Acceso - Trazabilidad de Equipos</title>
+    <link rel="stylesheet" href="../css/style_login.css">
+</head>
+<body>
+
+    <main class="login-container">
+        <div class="login-card">
+            <div class="login-header">
+                <h2>Bienvenido</h2>
+                <p>Sistema de Trazabilidad de Equipos</p>
+            </div>
+
+            <?php if (!empty($error_msg)): ?>
+                <div style="background: #ffebee; color: #c62828; padding: 10px; border-radius: 4px; margin-bottom: 15px; font-size: 0.9rem; text-align: center; border: 1px solid #ef9a9a;">
+                    ⚠️ <?php echo htmlspecialchars($error_msg); ?>
+                </div>
+            <?php endif; ?>
+
+            <form action="" method="POST" autocomplete="off">
+                <div class="form-group">
+                    <label for="username">Usuario Institucional</label>
+                    <input type="text" id="username" name="username" 
+                           value="<?php echo isset($_POST['username']) ? htmlspecialchars($_POST['username']) : ''; ?>"
+                           placeholder="ej. guillermo.fonseca" required autofocus>
+                </div>
+
+                <div class="form-group">
+                    <label for="password">Contraseña</label>
+                    <input type="password" id="password" name="password" placeholder="••••••••" required>
+                </div>
+
+                <button type="submit" class="btn-primary">Iniciar Sesión Segura</button>
+            </form>
+
+            <div class="login-footer">
+                <small>&copy; 2026 Universidad del Rosario</small>
+            </div>
+        </div>
+    </main>
+
+</body>
+</html>

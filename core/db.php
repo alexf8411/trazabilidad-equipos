@@ -3,6 +3,9 @@
  * core/db.php
  * Conector BD - Lee credenciales desde config.json
  * Versión 2.0 - Soporte para Clústeres y Cifrado
+ * 
+ * NOTA: Variables de credenciales usan prefijo db_ para evitar
+ * colisión con $user/$pass de login.php y otros módulos.
  */
 
 $configFile = __DIR__ . '/config.json';
@@ -34,9 +37,9 @@ if (isset($dbConf['dsn']) && !empty($dbConf['dsn'])) {
     }
 }
 
-// Descifrar credenciales
-$user = $dbConf['user'] ?? 'appadmdb';
-$pass = !empty($dbConf['pass']) ? ConfigCrypto::decrypt($dbConf['pass']) : '';
+// Descifrar credenciales (prefijo db_ para evitar colisión)
+$db_user = $dbConf['user'] ?? 'appadmdb';
+$db_pass = !empty($dbConf['pass']) ? ConfigCrypto::decrypt($dbConf['pass']) : '';
 
 $options = [
     PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
@@ -45,7 +48,7 @@ $options = [
 ];
 
 try {
-    $pdo = new PDO($dsn, $user, $pass, $options);
+    $pdo = new PDO($dsn, $db_user, $db_pass, $options);
 } catch (\PDOException $e) {
     // Error genérico para no exponer datos
     error_log("Error de conexión DB: " . $e->getMessage());
