@@ -249,7 +249,7 @@ $lugares = $pdo->query("SELECT * FROM lugares ORDER BY sede ASC, nombre ASC")->f
         <select name="sede" required>
             <option value="" disabled <?= !$editMode ? 'selected' : '' ?>>-- Seleccionar Sede --</option>
             <?php 
-            $opts = ['Sede Única', 'Centro', 'Quinta de Mutis', 'SEIC'];
+            $opts = ['Centro', 'Quinta de Mutis', 'SEIC', 'Bodega tecnología'];
             foreach ($opts as $o) {
                 $sel = ($editMode && $dataEdit['sede'] == $o) ? 'selected' : '';
                 echo "<option value='$o' $sel>$o</option>";
