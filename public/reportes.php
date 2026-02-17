@@ -1,26 +1,13 @@
 <?php
 /**
  * URTRACK - Reportes y Business Intelligence 
- * Versión 3.0 FINAL - SQL SERVER
+ * Versión 3.1 REFACTORIZADA - SQL SERVER
  * 
  * CAMBIOS APLICADOS:
- * ✅ KPIs clicables (8 totales)
- * ✅ Sin badge de caché
- * ✅ Sin KPI "Valor Inventario"
- * ✅ Todos los reportes desde KPIs funcionando
- * ✅ OUTER APPLY (SQL Server)
- * ✅ Caché en sesión (5 minutos)
- * ✅ Límites estrictos en queries
- * ✅ CSS centralizado
- * ✅ Responsive completo
- * 
- * MIGRACIÓN SQL SERVER:
- * ✅ LATERAL JOIN → OUTER APPLY
- * ✅ NOW() → GETDATE()
- * ✅ TIMESTAMPDIFF → DATEDIFF
- * ✅ DATE_SUB → DATEADD
- * ✅ CURDATE() → CAST(GETDATE() AS DATE)
- * ✅ LIMIT → TOP / OFFSET FETCH
+ * ✅ Bug productividad mes corregido (CONVERT fecha)
+ * ✅ JavaScript extraído a js/reportes.js
+ * ✅ CSS ya está en urtrack-styles.css
+ * ✅ Código más limpio y mantenible
  */
 
 require_once '../core/db.php';
@@ -487,9 +474,13 @@ function obtenerDatosReportes($pdo, $force_refresh = false, $time_filter = 'all'
         
         $datos['asignados'] = $datos['total_activos'] - $datos['en_bodega'];
         
-        // Productividad mes
+        // Productividad mes (🔧 BUG CORREGIDO)
         $mes_actual = date('Y-m');
-        $datos['movs_mes'] = $pdo->query("SELECT COUNT(*) FROM bitacora WHERE fecha_evento LIKE '$mes_actual%'")->fetchColumn();
+        $datos['movs_mes'] = $pdo->query("
+            SELECT COUNT(*) 
+            FROM bitacora 
+            WHERE CONVERT(VARCHAR(7), fecha_evento, 120) = '$mes_actual'
+        ")->fetchColumn();
         
         // Próximos a fin de vida (>80% antigüedad)
         $datos['fin_vida'] = $pdo->query("
@@ -827,80 +818,20 @@ $cache_age = isset($_SESSION[$cache_key_time]) ? (time() - $_SESSION[$cache_key_
     </div>
 </div>
 
+<!-- JavaScript extraído a archivo separado -->
+<script src="js/reportes.js"></script>
 <script>
-Chart.defaults.font.family = "'Segoe UI', sans-serif";
-Chart.defaults.color = '#666';
-
-const modL = <?= json_encode($datos['mod_labels']) ?>;
-const modD = <?= json_encode($datos['mod_data']) ?>;
-new Chart(document.getElementById('chartModalidad'), {
-    type: 'pie',
-    data: {
-        labels: modL,
-        datasets: [{
-            data: modD,
-            backgroundColor: ['#002D72', '#28a745', '#ffc107', '#17a2b8'],
-            borderWidth: 1
-        }]
-    },
-    options: {
-        maintainAspectRatio: false,
-        plugins: { legend: { position: 'right' } }
-    }
-});
-
-const sedeL = <?= json_encode($datos['sede_labels']) ?>;
-const sedeD = <?= json_encode($datos['sede_data']) ?>;
-new Chart(document.getElementById('chartSedes'), {
-    type: 'bar',
-    data: {
-        labels: sedeL,
-        datasets: [{
-            label: 'Equipos',
-            data: sedeD,
-            backgroundColor: '#002D72',
-            borderRadius: 4
-        }]
-    },
-    options: {
-        maintainAspectRatio: false,
-        scales: { y: { beginAtZero: true } },
-        plugins: { legend: { display: false } }
-    }
-});
-
-const tecL = <?= json_encode($datos['tec_labels']) ?>;
-const tecD = <?= json_encode($datos['tec_data']) ?>;
-new Chart(document.getElementById('chartTecnicos'), {
-    type: 'bar',
-    data: {
-        labels: tecL,
-        datasets: [{
-            label: 'Movimientos',
-            data: tecD,
-            backgroundColor: '#17a2b8',
-            borderRadius: 4
-        }]
-    },
-    options: {
-        indexAxis: 'y',
-        maintainAspectRatio: false,
-        plugins: { legend: { display: false } }
-    }
-});
-
-new Chart(document.getElementById('chartVida'), {
-    type: 'doughnut',
-    data: {
-        labels: ['Activos', 'Bajas'],
-        datasets: [{
-            data: [<?= $datos['total_activos'] ?>, <?= $datos['total_bajas'] ?>],
-            backgroundColor: ['#28a745', '#dc3545'],
-            hoverOffset: 4
-        }]
-    },
-    options: { maintainAspectRatio: false }
-});
+// Pasar datos PHP a JavaScript
+window.reportesData = {
+    mod_labels: <?= json_encode($datos['mod_labels']) ?>,
+    mod_data: <?= json_encode($datos['mod_data']) ?>,
+    sede_labels: <?= json_encode($datos['sede_labels']) ?>,
+    sede_data: <?= json_encode($datos['sede_data']) ?>,
+    tec_labels: <?= json_encode($datos['tec_labels']) ?>,
+    tec_data: <?= json_encode($datos['tec_data']) ?>,
+    total_activos: <?= $datos['total_activos'] ?>,
+    total_bajas: <?= $datos['total_bajas'] ?>
+};
 </script>
 
 </body>
