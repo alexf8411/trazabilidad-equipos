@@ -2,7 +2,7 @@
 /**
  * public/revertir_baja.php
  * Módulo Forense: Reversión de Bajas
- * Corregido: Asignación dinámica de responsable y ubicación.
+ * Corregido: Query exacta para bodega + eliminado sede/ubicacion redundantes.
  */
 require_once '../core/db.php';
 require_once '../core/session.php';
@@ -15,7 +15,7 @@ if (!isset($_SESSION['logged_in']) || $_SESSION['rol'] !== 'Administrador') {
 if (isset($_GET['serial'])) {
     $serial = $_GET['serial'];
     
-    // DATOS DEL USUARIO QUE CORRIGE (TÚ)
+    // DATOS DEL USUARIO QUE CORRIGE
     $nombre_admin = $_SESSION['nombre']; 
     $correo_admin = $_SESSION['usuario_id'] ?? $_SESSION['nombre'] ?? 'Administrador';
 
@@ -31,24 +31,22 @@ if (isset($_GET['serial'])) {
             throw new Exception("El equipo no existe o no está en estado de Baja.");
         }
 
-        // 2. Buscar Bodega de Tecnología
-        $stmt_bodega = $pdo->prepare("SELECT id, sede, nombre FROM lugares WHERE nombre LIKE ? LIMIT 1");
-        $stmt_bodega->execute(['%Bodega de tecnología%']); 
+        // 2. Buscar Bodega de Tecnología — query exacta, sin LIKE peligroso
+        $stmt_bodega = $pdo->prepare("SELECT id FROM lugares WHERE nombre = ? LIMIT 1");
+        $stmt_bodega->execute(['Bodega de Tecnología']);
         $bodega = $stmt_bodega->fetch();
-        
-        if (!$bodega) { // Fallback de seguridad
-            $stmt_bodega = $pdo->query("SELECT id, sede, nombre FROM lugares WHERE nombre LIKE '%Bodega%' LIMIT 1");
-            $bodega = $stmt_bodega->fetch();
+
+        if (!$bodega) {
+            throw new Exception("Error Crítico: No se encontró 'Bodega de Tecnología' en la base de datos.");
         }
-        if (!$bodega) throw new Exception("Error Crítico: No se encontró la Bodega de Tecnología.");
 
         // 3. Restaurar equipo (UPDATE)
         $stmt_upd = $pdo->prepare("UPDATE equipos SET estado_maestro = 'Alta' WHERE serial = ?");
         $stmt_upd->execute([$serial]);
 
-        // =================================================================================
+        // =========================================================================
         // 4. REGISTRO EN AUDITORÍA DE CAMBIOS (TABLA: auditoria_cambios)
-        // =================================================================================
+        // =========================================================================
         $sql_audit = "INSERT INTO auditoria_cambios (
                         usuario_responsable, 
                         tipo_accion, 
@@ -59,31 +57,29 @@ if (isset($_GET['serial'])) {
                     ) VALUES (?, ?, ?, ?, ?, NOW())";
         
         $pdo->prepare($sql_audit)->execute([
-            $correo_admin,                      // usuario_responsable
-            'UPDATE REVERT',                    // tipo_accion
-            "Equipo: $serial",                  // referencia (Serial afectado)
-            "Reversión administrativa de Baja a Alta. Placa: " . $equipo['placa_ur'], // detalles
-            $_SERVER['REMOTE_ADDR']             // ip_origen
+            $correo_admin,
+            'UPDATE REVERT',
+            "Equipo: $serial",
+            "Reversión administrativa de Baja a Alta. Placa: " . $equipo['placa_ur'],
+            $_SERVER['REMOTE_ADDR']
         ]);
 
-        // =================================================================================
+        // =========================================================================
         // 5. REGISTRO EN BITÁCORA (TABLA: bitacora)
-        // =================================================================================
+        // =========================================================================
         $sql_bit = "INSERT INTO bitacora (
-                        serial_equipo, id_lugar, sede, ubicacion, 
+                        serial_equipo, id_lugar,
                         tipo_evento, correo_responsable, tecnico_responsable, 
                         hostname, fecha_evento, desc_evento
-                    ) VALUES (?, ?, ?, ?, 'Alta', ?, ?, ?, NOW(), ?)";
+                    ) VALUES (?, ?, 'Alta', ?, ?, ?, NOW(), ?)";
         
         $pdo->prepare($sql_bit)->execute([
             $serial, 
-            $bodega['id'], 
-            $bodega['sede'], 
-            $bodega['nombre'],
-            $correo_admin,      // Responsable
-            $nombre_admin,      // Técnico
-            $serial,            // Hostname
-            'Reversión de baja administrativa por ' . $nombre_admin // desc_evento (OBLIGATORIO)
+            $bodega['id'],
+            $correo_admin,
+            $nombre_admin,
+            $serial,
+            'Reversión de baja administrativa por ' . $nombre_admin
         ]);
 
         $pdo->commit();
