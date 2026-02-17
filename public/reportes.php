@@ -63,13 +63,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             fputcsv($output, ['PLACA', 'SERIAL', 'MARCA', 'MODELO', 'SEDE', 'UBICACION', 'FECHA_INGRESO', 'TECNICO']);
             
             $sql = "SELECT e.placa_ur, e.serial, e.marca, e.modelo,
-                    last_event.sede, last_event.ubicacion, last_event.fecha_evento, last_event.tecnico_responsable
+                    l.sede, l.nombre AS ubicacion, last_event.fecha_evento, last_event.tecnico_responsable
                     FROM equipos e
                     LEFT JOIN LATERAL (
-                        SELECT tipo_evento, sede, ubicacion, fecha_evento, tecnico_responsable
+                        SELECT tipo_evento, id_lugar, fecha_evento, tecnico_responsable
                         FROM bitacora WHERE serial_equipo = e.serial
                         ORDER BY id_evento DESC LIMIT 1
                     ) AS last_event ON TRUE
+                    LEFT JOIN lugares l ON last_event.id_lugar = l.id
                     WHERE e.estado_maestro = 'Alta'
                     AND last_event.tipo_evento IN ('Devolución', 'Alta', 'Alistamiento')
                     LIMIT 10000";
@@ -92,13 +93,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             fputcsv($output, ['PLACA', 'SERIAL', 'MARCA', 'MODELO', 'RESPONSABLE', 'SEDE', 'UBICACION', 'FECHA_ASIGNACION', 'HOSTNAME']);
             
             $sql = "SELECT e.placa_ur, e.serial, e.marca, e.modelo,
-                    last_event.correo_responsable, last_event.sede, last_event.ubicacion, last_event.fecha_evento, last_event.hostname
+                    last_event.correo_responsable, l.sede, l.nombre AS ubicacion, last_event.fecha_evento, last_event.hostname
                     FROM equipos e
                     LEFT JOIN LATERAL (
-                        SELECT tipo_evento, correo_responsable, sede, ubicacion, fecha_evento, hostname
+                        SELECT tipo_evento, correo_responsable, id_lugar, fecha_evento, hostname
                         FROM bitacora WHERE serial_equipo = e.serial
                         ORDER BY id_evento DESC LIMIT 1
                     ) AS last_event ON TRUE
+                    LEFT JOIN lugares l ON last_event.id_lugar = l.id
                     WHERE e.estado_maestro = 'Alta'
                     AND last_event.tipo_evento IN ('Asignación', 'Asignacion_Masiva')
                     LIMIT 10000";
@@ -124,9 +126,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             fputcsv($output, ['ID_EVENTO', 'FECHA', 'TIPO', 'PLACA', 'SERIAL', 'EQUIPO', 'SEDE', 'UBICACION', 'RESPONSABLE', 'REALIZADO_POR']);
             
             $sql = "SELECT b.id_evento, b.fecha_evento, b.tipo_evento, e.placa_ur, b.serial_equipo,
-                    CONCAT(e.marca, ' ', e.modelo) as equipo, b.sede, b.ubicacion, b.correo_responsable, b.tecnico_responsable
+                    CONCAT(e.marca, ' ', e.modelo) as equipo, l.sede, l.nombre AS ubicacion, b.correo_responsable, b.tecnico_responsable
                     FROM bitacora b
                     JOIN equipos e ON b.serial_equipo = e.serial
+                    LEFT JOIN lugares l ON b.id_lugar = l.id
                     WHERE b.fecha_evento BETWEEN ? AND ?
                     ORDER BY b.fecha_evento DESC
                     LIMIT 50000";
@@ -173,17 +176,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             fputcsv($output, ['PLACA', 'SERIAL', 'EQUIPO', 'UBICACION', 'ULTIMO_MOVIMIENTO', 'MESES_INACTIVO']);
             
             $sql = "SELECT e.placa_ur, e.serial, CONCAT(e.marca, ' ', e.modelo),
-                    last_event.ubicacion, last_event.fecha_evento,
+                    l.nombre AS ubicacion, last_event.fecha_evento,
                     TIMESTAMPDIFF(MONTH, last_event.fecha_evento, NOW()) AS meses
                     FROM equipos e
                     LEFT JOIN LATERAL (
-                        SELECT tipo_evento, ubicacion, fecha_evento
+                        SELECT tipo_evento, id_lugar, fecha_evento
                         FROM bitacora WHERE serial_equipo = e.serial
                         ORDER BY id_evento DESC LIMIT 1
                     ) AS last_event ON TRUE
+                    LEFT JOIN lugares l ON last_event.id_lugar = l.id
                     WHERE e.estado_maestro = 'Alta'
                     AND last_event.tipo_evento IN ('Devolución', 'Alta', 'Alistamiento')
-                    AND last_event.ubicacion LIKE '%Bodega%'
+                    AND l.nombre LIKE '%Bodega%'
                     AND last_event.fecha_evento < DATE_SUB(NOW(), INTERVAL 6 MONTH)
                     ORDER BY meses DESC
                     LIMIT 5000";
@@ -249,15 +253,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         WHEN last_event.tipo_evento = 'Baja' THEN 'Baja'
                         ELSE 'Sin historial'
                     END AS estado_op,
-                    last_event.sede, last_event.ubicacion, last_event.correo_responsable, last_event.tecnico_responsable
+                    l.sede, l.nombre AS ubicacion, last_event.correo_responsable, last_event.tecnico_responsable
                 FROM equipos e
                 LEFT JOIN LATERAL (
-                    SELECT tipo_evento, fecha_evento, sede, ubicacion, correo_responsable, tecnico_responsable
+                    SELECT tipo_evento, fecha_evento, id_lugar, correo_responsable, tecnico_responsable
                     FROM bitacora
                     WHERE serial_equipo = e.serial
                     ORDER BY id_evento DESC
                     LIMIT 1
                 ) AS last_event ON TRUE
+                LEFT JOIN lugares l ON last_event.id_lugar = l.id
                 ORDER BY e.placa_ur
                 LIMIT 10000
             ";
@@ -283,9 +288,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             fputcsv($output, ['ID_EVENTO', 'FECHA', 'TIPO', 'PLACA', 'SERIAL', 'EQUIPO', 'SEDE', 'UBICACION', 'RESPONSABLE', 'REALIZADO_POR']);
             
             $sql = "SELECT b.id_evento, b.fecha_evento, b.tipo_evento, e.placa_ur, b.serial_equipo,
-                    CONCAT(e.marca, ' ', e.modelo) as equipo, b.sede, b.ubicacion, b.correo_responsable, b.tecnico_responsable
+                    CONCAT(e.marca, ' ', e.modelo) as equipo, l.sede, l.nombre AS ubicacion, b.correo_responsable, b.tecnico_responsable
                     FROM bitacora b
                     JOIN equipos e ON b.serial_equipo = e.serial
+                    LEFT JOIN lugares l ON b.id_lugar = l.id
                     WHERE b.fecha_evento BETWEEN ? AND ?
                     ORDER BY b.fecha_evento DESC
                     LIMIT 50000";
@@ -361,18 +367,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             fputcsv($output, ['PLACA', 'SERIAL', 'EQUIPO', 'RESPONSABLE', 'SEDE', 'UBICACION', 'DLO', 'SCCM', 'ANTIVIRUS']);
             
             $sql = "SELECT e.placa_ur, e.serial, CONCAT(e.marca, ' ', e.modelo),
-                    last_event.correo_responsable, last_event.sede, last_event.ubicacion,
+                    last_event.correo_responsable, l.sede, l.nombre AS ubicacion,
                     CASE WHEN last_event.check_dlo = 1 THEN 'SI' ELSE 'NO' END,
                     CASE WHEN last_event.check_sccm = 1 THEN 'SI' ELSE 'NO' END,
                     CASE WHEN last_event.check_antivirus = 1 THEN 'SI' ELSE 'NO' END
                     FROM equipos e
                     LEFT JOIN LATERAL (
-                        SELECT correo_responsable, sede, ubicacion, tipo_evento, check_dlo, check_sccm, check_antivirus
+                        SELECT correo_responsable, id_lugar, tipo_evento, check_dlo, check_sccm, check_antivirus
                         FROM bitacora
                         WHERE serial_equipo = e.serial
                         ORDER BY id_evento DESC
                         LIMIT 1
                     ) AS last_event ON TRUE
+                    LEFT JOIN lugares l ON last_event.id_lugar = l.id
                     WHERE e.estado_maestro = 'Alta'
                     AND last_event.tipo_evento IN ('Asignación', 'Asignacion_Masiva')
                     AND (last_event.check_dlo = 0 OR last_event.check_sccm = 0 OR last_event.check_antivirus = 0)
@@ -423,10 +430,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             fputcsv($output, ['FECHA', 'TIPO_EVENTO', 'SEDE', 'UBICACION', 'RESPONSABLE', 'HOSTNAME', 'TECNICO', 'DETALLES']);
             
-            $sql = "SELECT fecha_evento, tipo_evento, sede, ubicacion, correo_responsable, hostname, tecnico_responsable, desc_evento
-                    FROM bitacora
-                    WHERE serial_equipo = ?
-                    ORDER BY id_evento ASC
+            $sql = "SELECT b.fecha_evento, b.tipo_evento, l.sede, l.nombre AS ubicacion,
+                    b.correo_responsable, b.hostname, b.tecnico_responsable, b.desc_evento
+                    FROM bitacora b
+                    LEFT JOIN lugares l ON b.id_lugar = l.id
+                    WHERE b.serial_equipo = ?
+                    ORDER BY b.id_evento ASC
                     LIMIT 1000";
             
             $stmt = $pdo->prepare($sql);
@@ -500,15 +509,16 @@ function obtenerDatosReportes($pdo, $force_refresh = false, $time_filter = 'all'
             SELECT COUNT(DISTINCT e.serial)
             FROM equipos e
             LEFT JOIN LATERAL (
-                SELECT tipo_evento, fecha_evento, ubicacion
+                SELECT tipo_evento, fecha_evento, id_lugar
                 FROM bitacora
                 WHERE serial_equipo = e.serial
                 ORDER BY id_evento DESC
                 LIMIT 1
             ) AS last_event ON TRUE
+            LEFT JOIN lugares l ON last_event.id_lugar = l.id
             WHERE e.estado_maestro = 'Alta'
             AND last_event.tipo_evento IN ('Devolución', 'Alta', 'Alistamiento')
-            AND last_event.ubicacion LIKE '%Bodega%'
+            AND l.nombre LIKE '%Bodega%'
             AND last_event.fecha_evento < DATE_SUB(NOW(), INTERVAL 6 MONTH)
             LIMIT 1000
         ")->fetchColumn();
@@ -543,17 +553,18 @@ function obtenerDatosReportes($pdo, $force_refresh = false, $time_filter = 'all'
         
         // Sedes
         $stmt = $pdo->query("
-            SELECT last_event.sede, COUNT(DISTINCT e.serial) as cant
+            SELECT l.sede, COUNT(DISTINCT e.serial) as cant
             FROM equipos e
             LEFT JOIN LATERAL (
-                SELECT sede
+                SELECT id_lugar
                 FROM bitacora
                 WHERE serial_equipo = e.serial
                 ORDER BY id_evento DESC
                 LIMIT 1
             ) AS last_event ON TRUE
+            LEFT JOIN lugares l ON last_event.id_lugar = l.id
             WHERE e.estado_maestro = 'Alta'
-            GROUP BY last_event.sede
+            GROUP BY l.sede
             LIMIT 50
         ");
         $raw = $stmt->fetchAll(PDO::FETCH_ASSOC);
