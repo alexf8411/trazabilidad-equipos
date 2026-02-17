@@ -71,27 +71,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $error_msg  = $resultado['message'];
             $error_code = $resultado['error_code'] ?? 'OTRO';
 
-            // Determinar tipo de resultado para auditoría
+            // Solo registrar en auditoría si el error es relevante para seguridad
+            // (usuario real con contraseña incorrecta, cuenta bloqueada, password expirado)
+            $registrar_en_auditoria = false;
+            $resultado_auditoria = '';
+
             if ($error_code === '775') {
                 $resultado_auditoria = 'Cuenta_Bloqueada';
+                $registrar_en_auditoria = true;
             } elseif ($error_code === '532') {
                 $resultado_auditoria = 'Password_Expirado';
-            } else {
-                // 52e = contraseña incorrecta, OTRO = error desconocido
+                $registrar_en_auditoria = true;
+            } elseif ($error_code === '52e') {
+                // 52e = contraseña incorrecta para usuario REAL (esto sí importa)
                 $resultado_auditoria = 'Login_Fallido';
+                $registrar_en_auditoria = true;
             }
+            // Si error_code es 'OTRO' o 'ERROR_CONEXION' → NO registrar
 
-            // AUDITORÍA — Fallo de login
-            // Aquí no tenemos nombre porque LDAP no autenticó
-            // Solo guardamos lo que el usuario escribió en el formulario
-            try {
-                require_once '../core/db.php';
-                $pdo->prepare("INSERT INTO auditoria_acceso 
-                    (fecha_hora, usuario_ldap, usuario_nombre, ip_acceso, resultado)
-                    VALUES (NOW(), ?, NULL, ?, ?)")
-                    ->execute([$user, $ip_cliente, $resultado_auditoria]);
-            } catch (Exception $e) {
-                error_log("Fallo auditoría login fallido: " . $e->getMessage());
+            // AUDITORÍA — Solo fallos relevantes
+            if ($registrar_en_auditoria) {
+                try {
+                    require_once '../core/db.php';
+                    $pdo->prepare("INSERT INTO auditoria_acceso 
+                        (fecha_hora, usuario_ldap, usuario_nombre, ip_acceso, resultado)
+                        VALUES (NOW(), ?, NULL, ?, ?)")
+                        ->execute([$user, $ip_cliente, $resultado_auditoria]);
+                } catch (Exception $e) {
+                    error_log("Fallo auditoría login fallido: " . $e->getMessage());
+                }
             }
         }
 
