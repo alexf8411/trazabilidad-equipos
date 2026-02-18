@@ -151,7 +151,7 @@ document.addEventListener('DOMContentLoaded', function() {
             // ============================================================
             // VALIDACIÓN DE COMPLIANCE PARA ASIGNACIONES
             // ============================================================
-            if (tipoEvento === 'Asignación' && !complianceWarningAceptado) {
+            if (tipoEvento === 'Asignación') {
                 const checkAntivirus = document.querySelector('input[name="check_antivirus"]');
                 const checkSCCM = document.querySelector('input[name="check_sccm"]');
                 
@@ -170,8 +170,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 // Si es desde Bodega hacia Conecta UR, NO validar compliance
                 const esAlistamientoConecta = esOrigenBodega && esDestinoConecta;
                 
-                // Si alguno de los dos está desactivado Y NO es alistamiento Conecta, mostrar advertencia
-                if ((!antivirusOK || !sccmOK) && !esAlistamientoConecta) {
+                // Si alguno de los dos está desactivado Y NO es alistamiento Conecta Y NO se ha aceptado el riesgo
+                if ((!antivirusOK || !sccmOK) && !esAlistamientoConecta && !complianceWarningAceptado) {
                     e.preventDefault();
                     
                     let mensaje = '⚠️ ADVERTENCIA DE COMPLIANCE\n\n';
@@ -192,9 +192,15 @@ document.addEventListener('DOMContentLoaded', function() {
                     const continuar = confirm(mensaje);
                     
                     if (continuar) {
-                        // Usuario aceptó el riesgo - marcar flag y reenviar formulario
+                        // Usuario aceptó el riesgo - marcar flag y permitir el envío
                         complianceWarningAceptado = true;
-                        form.submit(); // Enviar el formulario manualmente
+                        
+                        // Simular clic en el botón submit para disparar el evento de nuevo
+                        // pero ahora con el flag activado
+                        setTimeout(() => {
+                            btnSubmit.click();
+                        }, 100);
+                        
                         return false;
                     } else {
                         // Usuario canceló - resaltar los switches que están apagados
@@ -224,6 +230,10 @@ document.addEventListener('DOMContentLoaded', function() {
                     }
                 }
             }
+            
+            // Si llegamos aquí, todo está OK o el usuario aceptó el riesgo
+            // Permitir que el formulario se envíe normalmente
+            return true;
         });
     }
 
