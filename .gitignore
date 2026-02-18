@@ -10,3 +10,4 @@ core/*.backup_*
 *.BACKUP
 *.OLD
 *.NEW
+tests_playwright/

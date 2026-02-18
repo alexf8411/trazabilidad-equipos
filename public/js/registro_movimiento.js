@@ -29,6 +29,55 @@ document.addEventListener('DOMContentLoaded', function() {
     };
 
     // ========================================================================
+    // AUTO-SELECCIÓN DE BODEGA EN DEVOLUCIONES
+    // ========================================================================
+    const tipoEventoSelect = document.getElementById('tipo_evento');
+    const selectSede = document.getElementById('selectSede');
+    const selectLugar = document.getElementById('selectLugar');
+    
+    if (tipoEventoSelect) {
+        tipoEventoSelect.addEventListener('change', function() {
+            if (this.value === 'Devolución') {
+                // Pre-seleccionar "Sede" (buscar la sede que contenga "Bogotá" o la principal)
+                const sedeDefault = 'Sede'; // Ajusta según tu catálogo
+                
+                // Buscar si existe "Bodega de Tecnología" en los datos
+                const bodegaTecno = lugaresData.find(l => 
+                    l.nombre.toLowerCase().includes('bodega') && 
+                    l.nombre.toLowerCase().includes('tecnolog')
+                );
+                
+                if (bodegaTecno) {
+                    // Seleccionar la sede de la bodega
+                    selectSede.value = bodegaTecno.sede;
+                    
+                    // Disparar el filtrado de lugares
+                    filtrarLugares();
+                    
+                    // Esperar un momento para que se llene el select de lugares
+                    setTimeout(() => {
+                        selectLugar.value = bodegaTecno.id;
+                    }, 100);
+                    
+                    // Resaltar visualmente
+                    selectSede.style.borderColor = '#f59e0b';
+                    selectLugar.style.borderColor = '#f59e0b';
+                    
+                    setTimeout(() => {
+                        selectSede.style.borderColor = '';
+                        selectLugar.style.borderColor = '';
+                    }, 2000);
+                }
+            } else {
+                // Si cambia a Asignación, limpiar las selecciones
+                selectSede.value = '';
+                selectLugar.innerHTML = '<option value="">-- Primero elija Sede --</option>';
+                selectLugar.disabled = true;
+            }
+        });
+    }
+
+    // ========================================================================
     // MOSTRAR/OCULTAR USER CARDS CUANDO SE VERIFICAN USUARIOS
     // ========================================================================
     
@@ -55,7 +104,7 @@ document.addEventListener('DOMContentLoaded', function() {
     };
 
     // ========================================================================
-    // VALIDACIÓN ADICIONAL DEL FORMULARIO
+    // VALIDACIÓN ADICIONAL DEL FORMULARIO CON ADVERTENCIA DE COMPLIANCE
     // ========================================================================
     
     const form = document.querySelector('form[method="POST"]');
@@ -65,6 +114,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const hostname = document.querySelector('input[name="hostname"]').value.trim();
             const noCaso = document.querySelector('input[name="no_caso"]').value.trim();
             const idLugar = document.querySelector('select[name="id_lugar"]').value;
+            const tipoEvento = document.querySelector('select[name="tipo_evento"]').value;
             
             // Validar hostname
             if (!hostname) {
@@ -94,6 +144,66 @@ document.addEventListener('DOMContentLoaded', function() {
                 alert('⚠️ Debe verificar el Responsable Principal en LDAP');
                 return false;
             }
+            
+            // ============================================================
+            // VALIDACIÓN DE COMPLIANCE PARA ASIGNACIONES
+            // ============================================================
+            if (tipoEvento === 'Asignación') {
+                const checkAntivirus = document.querySelector('input[name="check_antivirus"]');
+                const checkSCCM = document.querySelector('input[name="check_sccm"]');
+                
+                const antivirusOK = checkAntivirus && checkAntivirus.checked;
+                const sccmOK = checkSCCM && checkSCCM.checked;
+                
+                // Si alguno de los dos está desactivado, mostrar advertencia
+                if (!antivirusOK || !sccmOK) {
+                    e.preventDefault();
+                    
+                    let mensaje = '⚠️ ADVERTENCIA DE COMPLIANCE\n\n';
+                    mensaje += 'Los siguientes agentes NO están marcados como instalados:\n\n';
+                    
+                    if (!antivirusOK) {
+                        mensaje += '❌ Antivirus Corporativo\n';
+                    }
+                    if (!sccmOK) {
+                        mensaje += '❌ Agente SCCM\n';
+                    }
+                    
+                    mensaje += '\n🔒 Estos agentes son OBLIGATORIOS en todos los equipos asignados según políticas de seguridad institucional.\n\n';
+                    mensaje += '¿Desea continuar bajo su propio criterio y responsabilidad?\n\n';
+                    mensaje += '• Presione ACEPTAR para continuar sin los agentes (no recomendado)\n';
+                    mensaje += '• Presione CANCELAR para volver y marcar los agentes';
+                    
+                    const continuar = confirm(mensaje);
+                    
+                    if (!continuar) {
+                        // Resaltar visualmente los switches que están apagados
+                        if (!antivirusOK && checkAntivirus) {
+                            const parentDiv = checkAntivirus.closest('.switch-container');
+                            parentDiv.style.backgroundColor = '#fef2f2';
+                            parentDiv.style.border = '2px solid #dc2626';
+                            parentDiv.style.padding = '10px';
+                            parentDiv.style.borderRadius = '8px';
+                        }
+                        
+                        if (!sccmOK && checkSCCM) {
+                            const parentDiv = checkSCCM.closest('.switch-container');
+                            parentDiv.style.backgroundColor = '#fef2f2';
+                            parentDiv.style.border = '2px solid #dc2626';
+                            parentDiv.style.padding = '10px';
+                            parentDiv.style.borderRadius = '8px';
+                        }
+                        
+                        // Scroll hacia la sección de compliance
+                        document.querySelector('.compliance-section').scrollIntoView({ 
+                            behavior: 'smooth', 
+                            block: 'center' 
+                        });
+                        
+                        return false;
+                    }
+                }
+            }
         });
     }
 
@@ -120,10 +230,15 @@ document.addEventListener('DOMContentLoaded', function() {
     switches.forEach(switchInput => {
         switchInput.addEventListener('change', function() {
             const label = this.closest('.switch-container').querySelector('.switch-label');
+            const parentDiv = this.closest('.switch-container');
             
             if (this.checked) {
                 label.style.color = '#166534';
                 label.style.fontWeight = 'bold';
+                // Quitar el resaltado rojo si estaba presente
+                parentDiv.style.backgroundColor = '';
+                parentDiv.style.border = '';
+                parentDiv.style.padding = '';
             } else {
                 label.style.color = '#991b1b';
                 label.style.fontWeight = 'bold';
