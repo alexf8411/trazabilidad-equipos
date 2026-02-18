@@ -1,14 +1,14 @@
 <?php
 /**
  * URTRACK - Reportes y Business Intelligence 
- * Versión 3.2 - SQL Server - UTF-8 LIMPIO
+ * Versión 3.3 FINAL - SQL Server
  * 
- * CAMBIOS APLICADOS:
- * ✅ Todas las queries convertidas a SQL Server
- * ✅ KPIs con OUTER APPLY en lugar de LATERAL JOIN
- * ✅ Gráficas con cast a int
- * ✅ UTF-8 sin BOM
- * ✅ Emojis y acentos corregidos
+ * CAMBIOS v3.3:
+ * ✅ Auditoría completa en ALTAS (detecta re-ingresos)
+ * ✅ Auditoría completa en BAJAS (detecta revertidas)
+ * ✅ KPI Compliance con ISNULL para manejar NULL
+ * ✅ UTF-8 limpio
+ * ✅ Todas las queries SQL Server nativas
  */
 
 header("Content-Type: text/html; charset=UTF-8");
@@ -27,12 +27,12 @@ ini_set('max_execution_time', 120);
 ini_set('memory_limit', '256M');
 
 // CONFIGURACIÓN DE CACHÉ
-$cache_duration = 300; // 5 minutos
+$cache_duration = 300;
 $cache_key_kpis = 'reportes_kpis_cache';
 $cache_key_charts = 'reportes_charts_cache';
 $cache_key_time = 'reportes_cache_time';
 
-// Filtro de tiempo (desde toolbar)
+// Filtro de tiempo
 $time_filter = $_GET['filter'] ?? 'all';
 $force_refresh = isset($_GET['refresh']);
 
@@ -195,17 +195,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
         }
         
-        // 7. DESDE KPI: Tasa Siniestralidad
+        // 7. DESDE KPI: Tasa Siniestralidad (🔧 MEJORADO: Auditoría completa)
         if (isset($_POST['btn_kpi_siniestralidad'])) {
             header('Content-Type: text/csv; charset=utf-8');
             header('Content-Disposition: attachment; filename=Todas_Bajas_' . $date_now . '.csv');
             $output = fopen('php://output', 'w');
             fprintf($output, chr(0xEF).chr(0xBB).chr(0xBF));
             
-            fputcsv($output, ['FECHA_BAJA', 'MOTIVO', 'PLACA', 'SERIAL', 'EQUIPO', 'VALOR_PERDIDO', 'TECNICO']);
+            fputcsv($output, ['FECHA_BAJA', 'MOTIVO', 'PLACA', 'SERIAL', 'EQUIPO', 'VALOR_PERDIDO', 'TECNICO', 'ESTADO_ACTUAL', 'ESTATUS']);
             
-            $sql = "SELECT TOP 10000 b.fecha_evento, b.desc_evento, e.placa_ur, e.serial,
-                    CONCAT(e.marca, ' ', e.modelo), e.precio, b.tecnico_responsable
+            $sql = "SELECT TOP 10000 
+                    b.fecha_evento, 
+                    b.desc_evento, 
+                    e.placa_ur, 
+                    e.serial,
+                    CONCAT(e.marca, ' ', e.modelo) as equipo, 
+                    e.precio, 
+                    b.tecnico_responsable,
+                    e.estado_maestro,
+                    CASE 
+                        WHEN e.estado_maestro = 'Alta' THEN 'REVERTIDA'
+                        WHEN e.estado_maestro = 'Baja' THEN 'EFECTIVA'
+                        ELSE 'DESCONOCIDO'
+                    END AS estatus
                     FROM bitacora b
                     JOIN equipos e ON b.serial_equipo = e.serial
                     WHERE b.tipo_evento = 'Baja'
@@ -296,7 +308,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
         }
         
-        // C. ALTAS/COMPRAS
+        // C. ALTAS/COMPRAS (🔧 MEJORADO: Detecta re-ingresos)
         if (isset($_POST['btn_altas'])) {
             $inicio = $_POST['f_ini_a'] . ' 00:00:00';
             $fin = $_POST['f_fin_a'] . ' 23:59:59';
@@ -306,10 +318,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $output = fopen('php://output', 'w');
             fprintf($output, chr(0xEF).chr(0xBB).chr(0xBF));
             
-            fputcsv($output, ['FECHA_INGRESO', 'ORDEN_COMPRA', 'PLACA', 'SERIAL', 'EQUIPO', 'MODALIDAD', 'VALOR']);
+            fputcsv($output, ['FECHA_INGRESO', 'ORDEN_COMPRA', 'PLACA', 'SERIAL', 'EQUIPO', 'MODALIDAD', 'VALOR', 'TIPO_ALTA']);
             
-            $sql = "SELECT TOP 10000 b.fecha_evento, b.desc_evento, e.placa_ur, e.serial,
-                    CONCAT(e.marca, ' ', e.modelo), e.modalidad, e.precio
+            $sql = "SELECT TOP 10000
+                    b.fecha_evento, 
+                    b.desc_evento, 
+                    e.placa_ur, 
+                    e.serial,
+                    CONCAT(e.marca, ' ', e.modelo) as equipo, 
+                    e.modalidad, 
+                    e.precio,
+                    CASE 
+                        WHEN (SELECT COUNT(*) FROM bitacora WHERE serial_equipo = e.serial AND tipo_evento = 'Alta' AND id_evento < b.id_evento) > 0 
+                        THEN 'RE-INGRESO'
+                        ELSE 'ALTA INICIAL'
+                    END AS tipo_alta
                     FROM bitacora b
                     JOIN equipos e ON b.serial_equipo = e.serial
                     WHERE b.tipo_evento = 'Alta' AND b.fecha_evento BETWEEN ? AND ?
@@ -322,7 +345,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
         }
         
-        // D. BAJAS/SINIESTROS
+        // D. BAJAS/SINIESTROS (🔧 MEJORADO: Muestra estado actual)
         if (isset($_POST['btn_bajas'])) {
             $inicio = $_POST['f_ini_b'] . ' 00:00:00';
             $fin = $_POST['f_fin_b'] . ' 23:59:59';
@@ -332,10 +355,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $output = fopen('php://output', 'w');
             fprintf($output, chr(0xEF).chr(0xBB).chr(0xBF));
             
-            fputcsv($output, ['FECHA_BAJA', 'MOTIVO', 'PLACA', 'SERIAL', 'EQUIPO', 'VALOR_PERDIDO', 'TECNICO']);
+            fputcsv($output, ['FECHA_BAJA', 'MOTIVO', 'PLACA', 'SERIAL', 'EQUIPO', 'VALOR_PERDIDO', 'TECNICO', 'ESTADO_ACTUAL', 'ESTATUS_BAJA']);
             
-            $sql = "SELECT TOP 10000 b.fecha_evento, b.desc_evento, e.placa_ur, e.serial,
-                    CONCAT(e.marca, ' ', e.modelo), e.precio, b.tecnico_responsable
+            $sql = "SELECT TOP 10000
+                    b.fecha_evento, 
+                    b.desc_evento, 
+                    e.placa_ur, 
+                    e.serial,
+                    CONCAT(e.marca, ' ', e.modelo) as equipo, 
+                    e.precio, 
+                    b.tecnico_responsable,
+                    e.estado_maestro,
+                    CASE 
+                        WHEN e.estado_maestro = 'Alta' THEN 'REVERTIDA'
+                        WHEN e.estado_maestro = 'Baja' THEN 'EFECTIVA'
+                        ELSE 'DESCONOCIDO'
+                    END AS estatus_baja
                     FROM bitacora b
                     JOIN equipos e ON b.serial_equipo = e.serial
                     WHERE b.tipo_evento = 'Baja' AND b.fecha_evento BETWEEN ? AND ?
@@ -372,7 +407,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     LEFT JOIN lugares l ON last_event.id_lugar = l.id
                     WHERE e.estado_maestro = 'Alta'
                     AND last_event.tipo_evento IN ('Asignación', 'Asignacion_Masiva')
-                    AND (last_event.check_dlo = 0 OR last_event.check_sccm = 0 OR last_event.check_antivirus = 0)";
+                    AND (ISNULL(last_event.check_dlo, 0) = 0 
+                         OR ISNULL(last_event.check_sccm, 0) = 0 
+                         OR ISNULL(last_event.check_antivirus, 0) = 0)";
             
             $stmt = $pdo->query($sql);
             while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) { fputcsv($output, $row); }
@@ -514,7 +551,7 @@ function obtenerDatosReportes($pdo, $force_refresh = false, $time_filter = 'all'
         $total_equipos = $datos['total_activos'] + $datos['total_bajas'];
         $datos['tasa_siniestralidad'] = $total_equipos > 0 ? round(($datos['total_bajas'] / $total_equipos) * 100, 1) : 0;
         
-        // Sin compliance
+        // Sin compliance (🔧 CORREGIDO: Maneja NULL)
         $datos['sin_compliance'] = $pdo->query("
             SELECT COUNT(DISTINCT e.serial)
             FROM equipos e
@@ -526,7 +563,9 @@ function obtenerDatosReportes($pdo, $force_refresh = false, $time_filter = 'all'
             ) AS last_event
             WHERE e.estado_maestro = 'Alta'
             AND last_event.tipo_evento IN ('Asignación', 'Asignacion_Masiva')
-            AND (last_event.check_dlo = 0 OR last_event.check_sccm = 0 OR last_event.check_antivirus = 0)
+            AND (ISNULL(last_event.check_dlo, 0) = 0 
+                 OR ISNULL(last_event.check_sccm, 0) = 0 
+                 OR ISNULL(last_event.check_antivirus, 0) = 0)
         ")->fetchColumn();
         
         // GRÁFICAS
