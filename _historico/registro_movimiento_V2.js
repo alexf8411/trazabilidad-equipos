@@ -4,9 +4,6 @@
  * Los scripts de LDAP se mantienen en archivos separados
  */
 
-// Flag global para controlar el envío del formulario cuando aceptan el riesgo
-let complianceWarningAceptado = false;
-
 document.addEventListener('DOMContentLoaded', function() {
     
     // ========================================================================
@@ -41,7 +38,10 @@ document.addEventListener('DOMContentLoaded', function() {
     if (tipoEventoSelect) {
         tipoEventoSelect.addEventListener('change', function() {
             if (this.value === 'Devolución') {
-                // Buscar "Bodega de Tecnología" en los datos
+                // Pre-seleccionar "Sede" (buscar la sede que contenga "Bogotá" o la principal)
+                const sedeDefault = 'Sede'; // Ajusta según tu catálogo
+                
+                // Buscar si existe "Bodega de Tecnología" en los datos
                 const bodegaTecno = lugaresData.find(l => 
                     l.nombre.toLowerCase().includes('bodega') && 
                     l.nombre.toLowerCase().includes('tecnolog')
@@ -74,9 +74,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 selectLugar.innerHTML = '<option value="">-- Primero elija Sede --</option>';
                 selectLugar.disabled = true;
             }
-            
-            // Resetear el flag de compliance cuando cambia el tipo
-            complianceWarningAceptado = false;
         });
     }
 
@@ -151,27 +148,15 @@ document.addEventListener('DOMContentLoaded', function() {
             // ============================================================
             // VALIDACIÓN DE COMPLIANCE PARA ASIGNACIONES
             // ============================================================
-            if (tipoEvento === 'Asignación' && !complianceWarningAceptado) {
+            if (tipoEvento === 'Asignación') {
                 const checkAntivirus = document.querySelector('input[name="check_antivirus"]');
                 const checkSCCM = document.querySelector('input[name="check_sccm"]');
                 
                 const antivirusOK = checkAntivirus && checkAntivirus.checked;
                 const sccmOK = checkSCCM && checkSCCM.checked;
                 
-                // EXCEPCIÓN: No validar si viene desde Bodega hacia Conecta UR
-                const lugarDestino = lugaresData.find(l => l.id == idLugar);
-                const esDestinoConecta = lugarDestino && lugarDestino.nombre.toLowerCase().includes('conecta ur');
-                
-                // Obtener ubicación actual desde el HTML (viene del PHP)
-                const ubicacionActualElement = document.querySelector('.current-status-box .data-val');
-                const ubicacionActualTexto = ubicacionActualElement ? ubicacionActualElement.textContent : '';
-                const esOrigenBodega = ubicacionActualTexto.toLowerCase().includes('bodega');
-                
-                // Si es desde Bodega hacia Conecta UR, NO validar compliance
-                const esAlistamientoConecta = esOrigenBodega && esDestinoConecta;
-                
-                // Si alguno de los dos está desactivado Y NO es alistamiento Conecta, mostrar advertencia
-                if ((!antivirusOK || !sccmOK) && !esAlistamientoConecta) {
+                // Si alguno de los dos está desactivado, mostrar advertencia
+                if (!antivirusOK || !sccmOK) {
                     e.preventDefault();
                     
                     let mensaje = '⚠️ ADVERTENCIA DE COMPLIANCE\n\n';
@@ -191,13 +176,8 @@ document.addEventListener('DOMContentLoaded', function() {
                     
                     const continuar = confirm(mensaje);
                     
-                    if (continuar) {
-                        // Usuario aceptó el riesgo - marcar flag y reenviar formulario
-                        complianceWarningAceptado = true;
-                        form.submit(); // Enviar el formulario manualmente
-                        return false;
-                    } else {
-                        // Usuario canceló - resaltar los switches que están apagados
+                    if (!continuar) {
+                        // Resaltar visualmente los switches que están apagados
                         if (!antivirusOK && checkAntivirus) {
                             const parentDiv = checkAntivirus.closest('.switch-container');
                             parentDiv.style.backgroundColor = '#fef2f2';
@@ -263,11 +243,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 label.style.color = '#991b1b';
                 label.style.fontWeight = 'bold';
             }
-        });
-        
-        // Resetear flag cuando cambian los switches
-        switchInput.addEventListener('change', function() {
-            complianceWarningAceptado = false;
         });
     });
 });
